@@ -1,0 +1,57 @@
+# Gramine manifest for the Byzantium mandate engine running inside SGX.
+#
+# The mandate engine enforces spend-mandate policies and signs pass tokens.
+# Running it in SGX means:
+#   - Agent credentials and signing keys never exist in cleartext outside the enclave
+#   - Mandate state cannot be tampered with by the host OS or hypervisor
+#   - Remote attestation (DCAP/ECDSA) proves the enclave is running genuine code
+#
+# Build:
+#   gramine-sgx-gen-private-key
+#   gramine-manifest -Darch_libdir=/lib/x86_64-linux-gnu byz-mandate.manifest.template byz-mandate.manifest
+#   gramine-sgx-sign --manifest byz-mandate.manifest --output byz-mandate.manifest.sgx
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/usr/local/bin/byz-mandate-tee"
+
+loader.log_level = "warning"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib"
+loader.env.RUST_LOG = "byzantium=info"
+loader.env.DATABASE_URL = { passthrough = true }
+loader.env.REDIS_URL = { passthrough = true }
+loader.env.MANDATE_ENGINE_PORT = { passthrough = true }
+
+# Only pass through env vars that the TEE service needs.
+# NEVER pass ANTHROPIC_API_KEY, operator signing keys, or raw scores.
+
+fs.mounts = [
+    { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
+    { path = "/lib/x86_64-linux-gnu", uri = "file:{{ arch_libdir }}" },
+    { path = "/usr/local/bin",    uri = "file:/usr/local/bin" },
+    { path = "/etc/ssl/certs",    uri = "file:/etc/ssl/certs" },   # TLS roots
+    { path = "/tmp",              type = "tmpfs", size = "64M" },
+]
+
+sgx.debug = false
+sgx.edmm_enable = {{ 'true' if env.get('EDMM', '0') == '1' else 'false' }}
+sgx.enclave_size = "2G"
+sgx.max_threads = 32
+
+# Trusted files — Gramine hashes these at sign time; any tampering breaks attestation.
+sgx.trusted_files = [
+    "file:{{ gramine.libos }}",
+    "file:{{ gramine.runtimedir() }}/",
+    "file:{{ arch_libdir }}/",
+    "file:/usr/local/bin/byz-mandate-tee",
+]
+
+# Allowed files (read at runtime, not hashed — use only for non-sensitive config).
+sgx.allowed_files = [
+    "file:/etc/hosts",
+    "file:/etc/resolv.conf",
+]
+
+# Remote attestation: DCAP (production) or EPID (dev).
+# The quote is verified by the rail before trusting a pass token.
+sgx.remote_attestation = "dcap"

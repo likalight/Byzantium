@@ -1,0 +1,2 @@
+This directory contains sqlx query metadata for SQLX_OFFLINE=true builds.
+Generate with: make sqlx-prepare

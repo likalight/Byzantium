@@ -1,0 +1,19 @@
+[package]
+name = "byz-rail-a2a"
+version = "0.1.0"
+edition = "2021"
+description = "Byzantium A2A (Agent-to-Agent) protocol trust adapter"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+
+axum        = { workspace = true }
+tokio       = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+chrono      = { workspace = true }
+uuid        = { workspace = true }
+tracing     = { workspace = true }
+reqwest     = { workspace = true }
+thiserror   = { workspace = true }

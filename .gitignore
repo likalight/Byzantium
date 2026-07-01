@@ -1,0 +1,47 @@
+# Rust
+/target/
+Cargo.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node / Dashboard
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+sdk/typescript/node_modules/
+sdk/typescript/dist/
+
+# Compiled output
+*.wasm
+*.so
+*.dylib
+*.dll
+
+# SQLx offline query cache (generated locally)
+.sqlx/*.json
+
+# Keys / secrets — never commit
+*.pem
+*.key
+*.p12
+deploy/k8s/sealed-secrets/byzantium-sealed.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# PDF / HTML reports (generated artifacts)
+PROGRESS_REPORT*.pdf
+PROGRESS_REPORT*.html
+Byzantium_Progress_Report.pdf

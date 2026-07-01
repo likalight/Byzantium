@@ -1,0 +1,53 @@
+# Gramine manifest for the Byzantium reputation scorer running inside SGX.
+#
+# The reputation scorer reads the raw transaction graph from Neo4j,
+# computes behavioral scores, and produces cryptographic commitments.
+# Running it in SGX means:
+#   - Raw scores never exist in cleartext outside the enclave
+#   - The scoring model (proprietary) cannot be extracted by a compromised host
+#   - Commitment + threshold proof are the only outputs; score stays inside
+#
+# The SP1 prover can optionally run inside this enclave to generate
+# threshold proofs without the private score leaving the hardware boundary.
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/usr/local/bin/byz-reputation-tee"
+
+loader.log_level = "warning"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib:/usr/local/lib"
+loader.env.RUST_LOG = "byzantium=info"
+loader.env.NEO4J_URI = { passthrough = true }
+loader.env.NEO4J_USERNAME = { passthrough = true }
+loader.env.NEO4J_PASSWORD = { passthrough = true }
+loader.env.REDIS_URL = { passthrough = true }
+loader.env.DEFAULT_REPUTATION_THRESHOLD = { passthrough = true }
+loader.env.SP1_PROVER = { passthrough = true }
+
+fs.mounts = [
+    { path = "/lib",              uri = "file:{{ gramine.runtimedir() }}" },
+    { path = "/lib/x86_64-linux-gnu", uri = "file:{{ arch_libdir }}" },
+    { path = "/usr/local/bin",    uri = "file:/usr/local/bin" },
+    { path = "/etc/ssl/certs",    uri = "file:/etc/ssl/certs" },
+    { path = "/tmp",              type = "tmpfs", size = "128M" },
+    # SP1 proof cache (tmpfs — proofs are ephemeral inside the enclave)
+    { path = "/proof-cache",      type = "tmpfs", size = "512M" },
+]
+
+sgx.debug = false
+sgx.enclave_size = "4G"   # Larger: SP1 prover uses significant memory
+sgx.max_threads = 64
+
+sgx.trusted_files = [
+    "file:{{ gramine.libos }}",
+    "file:{{ gramine.runtimedir() }}/",
+    "file:{{ arch_libdir }}/",
+    "file:/usr/local/bin/byz-reputation-tee",
+]
+
+sgx.allowed_files = [
+    "file:/etc/hosts",
+    "file:/etc/resolv.conf",
+]
+
+sgx.remote_attestation = "dcap"

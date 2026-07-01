@@ -1,0 +1,32 @@
+[package]
+name = "byz-tee"
+version = "0.1.0"
+edition = "2021"
+
+# Two TEE service binaries — each runs inside its own Gramine SGX enclave.
+[[bin]]
+name = "byz-mandate-tee"
+path = "src/mandate_tee.rs"
+
+[[bin]]
+name = "byz-reputation-tee"
+path = "src/reputation_tee.rs"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+byz-mandate = { path = "../byz-mandate" }
+byz-reputation = { path = "../byz-reputation" }
+byz-proof = { path = "../byz-proof" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+dotenvy = { workspace = true }
+axum = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }

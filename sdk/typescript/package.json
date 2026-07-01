@@ -1,0 +1,55 @@
+{
+  "name": "@byzantium/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the Byzantium AI Agent Trust Gateway",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "trust",
+    "web3",
+    "payments",
+    "compliance",
+    "did"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/byzantium-technologies/byzantium.git",
+    "directory": "sdk/typescript"
+  },
+  "homepage": "https://github.com/byzantium-technologies/byzantium#readme",
+  "bugs": {
+    "url": "https://github.com/byzantium-technologies/byzantium/issues"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4",
+    "tsup": "^8",
+    "vitest": "^1"
+  }
+}

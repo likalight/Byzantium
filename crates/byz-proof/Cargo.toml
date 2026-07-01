@@ -1,0 +1,29 @@
+[package]
+name = "byz-proof"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+# Enable to use the real SP1 prover (requires cargo-prove toolchain + compiled ELFs in elf/).
+# Without this feature, stub proofs are used — safe for development and unit tests.
+# Usage: cargo build --features sp1
+sp1 = ["dep:sp1-sdk"]
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+byz-reputation = { path = "../byz-reputation" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+
+# SP1 host SDK — optional; only linked when `sp1` feature is enabled.
+# The compiled ELF guest programs live in programs/ (separate workspace).
+# Build them with: cd programs && cargo prove build
+sp1-sdk = { version = "3", optional = true }

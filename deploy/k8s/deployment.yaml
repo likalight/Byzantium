@@ -1,0 +1,270 @@
+---
+# =============================================================================
+# Byzantium Gateway — Kubernetes Deployment
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: byzantium-gateway
+  namespace: byzantium
+  labels:
+    app: byzantium-gateway
+    app.kubernetes.io/name: byzantium-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: byzantium
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: byzantium-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # spin up 1 extra pod before taking any down
+      maxUnavailable: 0  # zero-downtime: never reduce below desired count
+  template:
+    metadata:
+      labels:
+        app: byzantium-gateway
+        app.kubernetes.io/name: byzantium-gateway
+      annotations:
+        # Force a rollout when the secret checksum changes.
+        # Update this value during deployments: kubectl annotate deployment ...
+        checksum/secrets: "update-me-on-deploy"
+    spec:
+      # -----------------------------------------------------------------------
+      # Security context (pod level)
+      # -----------------------------------------------------------------------
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Ensure pods spread across nodes for availability.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: byzantium-gateway
+
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: byzantium-gateway
+          image: ghcr.io/byzantium/gateway:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # -------------------------------------------------------------------
+          # Resource governance
+          # -------------------------------------------------------------------
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+
+          # -------------------------------------------------------------------
+          # Probes
+          # -------------------------------------------------------------------
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          # -------------------------------------------------------------------
+          # Environment — sourced from the byzantium-secrets Secret
+          # -------------------------------------------------------------------
+          envFrom:
+            - secretRef:
+                name: byzantium-secrets
+
+          # Individual bindings allow overriding specific keys or adding
+          # non-secret config values from a ConfigMap alongside the secret.
+          env:
+            # Gateway
+            - name: GATEWAY_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: GATEWAY_HOST
+                  optional: true  # falls back to default 0.0.0.0
+            - name: GATEWAY_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: GATEWAY_PORT
+                  optional: true  # falls back to default 8080
+            - name: BYZ_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: BYZ_API_KEYS
+            - name: RATE_LIMIT_PER_MIN
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: RATE_LIMIT_PER_MIN
+                  optional: true
+            - name: PROOF_REFRESH_SECS
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: PROOF_REFRESH_SECS
+                  optional: true
+            # PostgreSQL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: DATABASE_URL
+            # Redis
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: REDIS_URL
+            # Neo4j
+            - name: NEO4J_URI
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: NEO4J_URI
+            - name: NEO4J_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: NEO4J_USERNAME
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: NEO4J_PASSWORD
+            # ImmuDB
+            - name: IMMUDB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: IMMUDB_HOST
+            - name: IMMUDB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: IMMUDB_USERNAME
+            - name: IMMUDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: IMMUDB_PASSWORD
+            - name: IMMUDB_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: IMMUDB_DATABASE
+                  optional: true
+            # zkMe
+            - name: ZKME_API_URL
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: ZKME_API_URL
+                  optional: true
+            - name: ZKME_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: ZKME_API_KEY
+            # Blockchain
+            - name: BASE_RPC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: BASE_RPC_URL
+            # SP1 ZK Prover
+            - name: SP1_PROVER
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: SP1_PROVER
+                  optional: true
+            - name: SP1_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: SP1_PRIVATE_KEY
+                  optional: true
+            # TEE sidecars
+            - name: BYZ_TEE_ENABLED
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: BYZ_TEE_ENABLED
+                  optional: true
+            - name: MANDATE_ENGINE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: MANDATE_ENGINE_PORT
+                  optional: true
+            - name: REPUTATION_TEE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: REPUTATION_TEE_PORT
+                  optional: true
+            # Logging
+            - name: RUST_LOG
+              valueFrom:
+                secretKeyRef:
+                  name: byzantium-secrets
+                  key: RUST_LOG
+                  optional: true
+
+          # -------------------------------------------------------------------
+          # Container security context
+          # -------------------------------------------------------------------
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Writable scratch space the binary can use for temp files.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      # Pull from GHCR (requires a k8s imagePullSecret if the registry is private)
+      # imagePullSecrets:
+      #   - name: ghcr-credentials

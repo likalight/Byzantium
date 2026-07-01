@@ -1,0 +1,32 @@
+[package]
+name = "byz-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+byz-identity = { path = "../byz-identity" }
+byz-receipt = { path = "../byz-receipt" }
+byz-proof = { path = "../byz-proof" }
+byz-reputation = { path = "../byz-reputation" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+
+# PostgreSQL
+sqlx = { workspace = true }
+
+# Redis
+redis = { workspace = true }
+
+# Neo4j
+neo4rs = { workspace = true }

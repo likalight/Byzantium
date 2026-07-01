@@ -1,0 +1,17 @@
+# Separate workspace for SP1 zkVM guest programs.
+# These compile to riscv32im-succinct-zkvm-elf, not the host target.
+#
+# Build with:   cargo prove build   (requires: cargo install cargo-prove)
+# Install tool: curl -L https://sp1.succinct.xyz | bash && sp1up
+#
+# The compiled ELF files land in elf/ and are embedded by byz-proof via include_bytes!.
+
+[workspace]
+members = [
+    "threshold-proof",
+    "disclosure-proof",
+]
+resolver = "2"
+
+[profile.release]
+panic = "abort"    # required for SP1 zkVM

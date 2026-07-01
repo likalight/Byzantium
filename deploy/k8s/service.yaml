@@ -1,0 +1,86 @@
+---
+# =============================================================================
+# Byzantium Gateway — Kubernetes Service (ClusterIP)
+# =============================================================================
+# Traffic path: Ingress → Service → Deployment pods
+# The Ingress (or nginx DaemonSet / LoadBalancer) forwards to port 8080 here.
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: byzantium-gateway
+  namespace: byzantium
+  labels:
+    app: byzantium-gateway
+    app.kubernetes.io/name: byzantium-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: byzantium
+spec:
+  type: ClusterIP
+  selector:
+    app: byzantium-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http     # resolves to containerPort named "http" (8080)
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: http     # TLS termination happens at the ingress layer
+      protocol: TCP
+  # Session affinity is intentionally off — the gateway is stateless.
+  sessionAffinity: None
+
+---
+# =============================================================================
+# Byzantium Gateway — HorizontalPodAutoscaler
+# =============================================================================
+# Scales the Deployment between 2 and 10 replicas, targeting 70 % CPU
+# utilisation across the pod set. Memory-based scaling is added as a secondary
+# signal to catch pathological proof-generation workloads.
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: byzantium-gateway
+  namespace: byzantium
+  labels:
+    app: byzantium-gateway
+    app.kubernetes.io/name: byzantium-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: byzantium
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: byzantium-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Scale up when average CPU across all pods exceeds 70 %.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Scale up when average memory across all pods exceeds 80 % of the limit.
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30   # react quickly to traffic spikes
+      policies:
+        - type: Pods
+          value: 2                      # add at most 2 pods per scaling event
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300  # be conservative about removing pods
+      policies:
+        - type: Pods
+          value: 1                      # remove at most 1 pod per scaling event
+          periodSeconds: 120

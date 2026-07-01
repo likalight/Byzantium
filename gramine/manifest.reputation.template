@@ -1,0 +1,56 @@
+# Gramine manifest for byz-reputation-tee
+# Build: gramine-manifest -Darch_libdir=/lib/x86_64-linux-gnu manifest.reputation.template manifest.reputation
+#        gramine-sgx-sign --manifest manifest.reputation --output manifest.reputation.sgx
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/usr/local/bin/byz-reputation-tee"
+
+loader.log_level = "{{ log_level | default('error') }}"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib"
+loader.env.REPUTATION_TEE_PORT = { passthrough = true }
+loader.env.RUST_LOG = { passthrough = true }
+# SP1_PROVER controls proof mode: mock | local | network
+loader.env.SP1_PROVER = { passthrough = true }
+loader.env.SP1_PRIVATE_KEY = { passthrough = true }
+
+# Reputation enclave needs more memory for the scoring model
+sgx.enclave_size = "2G"
+sgx.max_threads = 8
+sgx.debug = false
+
+sgx.remote_attestation = "dcap"
+sgx.ra_client_spid = ""
+sgx.ra_client_linkable = false
+
+fs.mounts = [
+  { type = "chroot", uri = "file:/",      path = "/" },
+  { type = "chroot", uri = "file:/tmp",   path = "/tmp" },
+  { type = "tmpfs",  path = "/var/tmp" },
+]
+
+sys.stack.size = "4M"
+sys.enable_sigterm_injection = true
+
+net.bind = [
+  { addr = "0.0.0.0:9002" },
+]
+
+# Outbound only to SP1 prover network (when SP1_PROVER=network)
+net.connect = [
+  { addr = "rpc.succinct.xyz:443" },
+]
+
+sgx.trusted_files = [
+  "file:/usr/local/bin/byz-reputation-tee",
+  "file:{{ gramine.libos }}",
+  "file:{{ arch_libdir }}/libpthread.so.0",
+  "file:{{ arch_libdir }}/libc.so.6",
+  "file:{{ arch_libdir }}/libdl.so.2",
+  "file:{{ arch_libdir }}/libm.so.6",
+  "file:{{ arch_libdir }}/librt.so.1",
+  "file:{{ arch_libdir }}/libgcc_s.so.1",
+  "file:/usr/lib/x86_64-linux-gnu/libssl.so.3",
+  "file:/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+  # SP1 ELF embedded in the binary — no separate file needed
+]

@@ -1,0 +1,50 @@
+# Gramine manifest for byz-mandate-tee
+# Build: gramine-manifest -Darch_libdir=/lib/x86_64-linux-gnu manifest.mandate.template manifest.mandate
+#        gramine-sgx-sign --manifest manifest.mandate --output manifest.mandate.sgx
+
+loader.entrypoint = "file:{{ gramine.libos }}"
+libos.entrypoint = "/usr/local/bin/byz-mandate-tee"
+
+loader.log_level = "{{ log_level | default('error') }}"
+
+loader.env.LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib"
+loader.env.MANDATE_ENGINE_PORT = { passthrough = true }
+loader.env.RUST_LOG = { passthrough = true }
+
+# Enclave size — 512 MB for mandate state (mandates are small structs)
+sgx.enclave_size = "512M"
+sgx.max_threads = 4
+sgx.debug = false
+
+# Remote attestation
+sgx.remote_attestation = "dcap"
+sgx.ra_client_spid = ""
+sgx.ra_client_linkable = false
+
+fs.mounts = [
+  { type = "chroot", uri = "file:/",      path = "/" },
+  { type = "chroot", uri = "file:/tmp",   path = "/tmp" },
+  { type = "tmpfs",  path = "/var/tmp" },
+]
+
+sys.stack.size = "2M"
+sys.enable_sigterm_injection = true
+
+# Allow TCP on the mandate service port only
+net.bind = [
+  { addr = "0.0.0.0:9001" },
+]
+
+# Trusted files: the binary + shared libs
+sgx.trusted_files = [
+  "file:/usr/local/bin/byz-mandate-tee",
+  "file:{{ gramine.libos }}",
+  "file:{{ arch_libdir }}/libpthread.so.0",
+  "file:{{ arch_libdir }}/libc.so.6",
+  "file:{{ arch_libdir }}/libdl.so.2",
+  "file:{{ arch_libdir }}/libm.so.6",
+  "file:{{ arch_libdir }}/librt.so.1",
+  "file:{{ arch_libdir }}/libgcc_s.so.1",
+  "file:/usr/lib/x86_64-linux-gnu/libssl.so.3",
+  "file:/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+]

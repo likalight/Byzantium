@@ -1,0 +1,1854 @@
+openapi: 3.0.3
+
+info:
+  title: Byzantium API
+  version: 0.1.0
+  description: >
+    Byzantium is an autonomous-agent trust and compliance gateway. It evaluates
+    whether an agent is authorised to perform a given action by enforcing
+    operator-defined spend mandates, checking behavioural reputation scores, and
+    issuing short-lived ML-DSA–signed PassTokens that payment rails can verify
+    in microseconds without calling back to Byzantium. The API also provides
+    mandate lifecycle management, liability-receipt recording with Merkle batch
+    anchoring, DID-based agent identity, regulator-grade audit export, EIP-3009
+    and Solana SPL payment-rail verification, and operator API-key management.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server (no TLS)
+  - url: https://api.byzantium.example.com
+    description: Production — TLS terminated by nginx; same path structure
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Trust
+    description: Core hot-path trust evaluation
+  - name: Mandates
+    description: Operator spend-mandate lifecycle
+  - name: Receipts
+    description: Liability-receipt recording and Merkle batch management
+  - name: Audit
+    description: Regulator-grade audit export with Merkle proofs
+  - name: Identity
+    description: DID-based agent registration and deactivation
+  - name: Payments
+    description: Payment-rail pre-verification (EIP-3009, Solana SPL)
+  - name: Keys
+    description: Operator API-key management
+  - name: Observability
+    description: Health and Prometheus metrics endpoints
+
+paths:
+
+  # ── Trust ────────────────────────────────────────────────────────────────────
+
+  /v1/trust-check:
+    post:
+      tags: [Trust]
+      operationId: trustCheck
+      summary: Evaluate agent trust for an action
+      description: >
+        Runs the full trust pipeline — mandate compliance check, reputation
+        threshold evaluation, and (on pass) issues a short-lived ML-DSA–signed
+        PassToken that the calling rail can verify offline. Target latency is
+        under 200 ms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrustCheckRequest'
+            example:
+              agent_did: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+              action_type: payment
+              amount_cents: 5000
+              counterparty:
+                id: "merchant-42"
+                chain: "base"
+                address: "0xAbCd1234..."
+              rail_id: "eip3009-base"
+              idempotency_key: "req-abc-123"
+      responses:
+        '200':
+          description: Trust evaluation completed (verdict may be PASS, FLAG, or BLOCK)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustCheckResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── Mandates ─────────────────────────────────────────────────────────────────
+
+  /v1/mandates:
+    post:
+      tags: [Mandates]
+      operationId: createMandate
+      summary: Create a spend mandate for an agent
+      description: >
+        Creates a new cryptographically-signed SpendMandate defining what an
+        agent is allowed to do; the mandate root is the SHA-256 Merkle root
+        over all fields and is used for ZK range/membership proofs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMandateRequest'
+            example:
+              agent_did: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+              operator_id: "op-acme"
+              counterparty_whitelist: ["merchant-42", "vendor-7"]
+              allowed_action_types: ["payment", "api_call"]
+              per_tx_cap_cents: 10000
+              daily_cap_cents: 500000
+              valid_days: 30
+      responses:
+        '200':
+          description: Mandate created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateMandateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/mandates/{id}:
+    get:
+      tags: [Mandates]
+      operationId: getMandate
+      summary: Retrieve a mandate by ID
+      description: >
+        Returns the full SpendMandate record including its Merkle root and
+        validity window; prefers the persistent store, falls back to in-memory.
+      parameters:
+        - $ref: '#/components/parameters/MandateId'
+      responses:
+        '200':
+          description: Mandate found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpendMandate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/mandates/{id}/revoke:
+    post:
+      tags: [Mandates]
+      operationId: revokeMandate
+      summary: Revoke a mandate immediately
+      description: >
+        Marks the mandate as revoked in both the persistent store and the
+        in-memory engine; any subsequent trust-checks for this agent will fail
+        compliance.
+      parameters:
+        - $ref: '#/components/parameters/MandateId'
+      responses:
+        '200':
+          description: Mandate revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked:
+                    type: string
+                    format: uuid
+                    description: UUID of the revoked mandate
+              example:
+                revoked: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Receipts ─────────────────────────────────────────────────────────────────
+
+  /v1/receipts:
+    post:
+      tags: [Receipts]
+      operationId: createReceipt
+      summary: Record a signed liability receipt
+      description: >
+        Creates an ML-DSA–signed LiabilityReceipt for a completed agent action,
+        persists it to PostgreSQL, and adds it to the rolling Merkle batch;
+        if the batch reaches its size threshold it is automatically sealed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReceiptRequest'
+            example:
+              agent_did: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+              action_type: payment
+              counterparty:
+                id: "merchant-42"
+                chain: "base"
+                address: "0xAbCd1234..."
+              amount_cents: 5000
+              outcome: success
+              mandate_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+              rail_id: "eip3009-base"
+      responses:
+        '200':
+          description: Receipt created and signed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiabilityReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/receipts/{id}/proof:
+    get:
+      tags: [Receipts]
+      operationId: inclusionProof
+      summary: Get Merkle inclusion proof for a receipt
+      description: >
+        Returns the batch ID and Merkle root for the batch that contains the
+        given receipt; full Merkle path generation requires rebuilding the batch
+        tree from stored receipts.
+      parameters:
+        - $ref: '#/components/parameters/ReceiptId'
+      responses:
+        '200':
+          description: Proof info for the receipt's batch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InclusionProofResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/batches/{id}/seal:
+    post:
+      tags: [Receipts]
+      operationId: sealBatch
+      summary: Force-seal the current receipt batch
+      description: >
+        Immediately seals the in-progress Merkle batch regardless of size,
+        persists it to PostgreSQL, and assigns all pending receipts to this
+        batch; useful for end-of-period anchoring.
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch sealed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SealBatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ── Audit ─────────────────────────────────────────────────────────────────────
+
+  /v1/audit/receipts:
+    get:
+      tags: [Audit]
+      operationId: listAuditReceipts
+      summary: Export receipts with Merkle proofs for audit
+      description: >
+        Returns paginated receipt records with their Merkle inclusion proofs so
+        regulators and insurers can independently verify each receipt without
+        trusting Byzantium; requires an audit-scoped Bearer key.
+      parameters:
+        - name: agent_did
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter receipts to a specific agent DID
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: >
+            ISO 8601 UTC lower bound (inclusive) on receipt timestamp
+            (e.g. `2024-01-01T00:00:00Z`)
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: ISO 8601 UTC upper bound (inclusive) on receipt timestamp
+        - name: batch_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter to receipts belonging to a specific batch (in-memory mode only)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Maximum number of records to return (capped at 1000)
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >
+            Opaque keyset-pagination cursor from the previous page's
+            `next_cursor` field (base64-encoded UUID string); omit to start
+            from the beginning
+      responses:
+        '200':
+          description: Paginated audit receipts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditReceiptsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/audit/batches/{id}:
+    get:
+      tags: [Audit]
+      operationId: getBatchProof
+      summary: Retrieve Merkle root for a sealed batch
+      description: >
+        Returns the Merkle root, receipt count, and seal timestamp for a given
+        batch, enabling offline verification of batch integrity.
+      parameters:
+        - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Batch proof details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchProofResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Identity ──────────────────────────────────────────────────────────────────
+
+  /v1/agents:
+    post:
+      tags: [Identity]
+      operationId: registerAgent
+      summary: Register a new agent DID
+      description: >
+        Generates a fresh Dilithium (ML-DSA) keypair and a deterministic DID for
+        the agent, stores the DID document, and returns the DID and public key
+        hex so the operator can embed it in the agent's TEE configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterAgentRequest'
+            example:
+              operator_id: "op-acme"
+              kyb_proof: "eyJhbGciOiJFZERTQSJ9..."
+      responses:
+        '200':
+          description: Agent registered; DID and public key returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterAgentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/agents/{did}:
+    get:
+      tags: [Identity]
+      operationId: getAgent
+      summary: Resolve an agent DID document
+      description: >
+        Returns the DID document for the given agent including operator, public
+        key, KYB status, and active flag; prefers the persistent store over the
+        in-memory resolver.
+      parameters:
+        - $ref: '#/components/parameters/AgentDid'
+      responses:
+        '200':
+          description: Agent DID document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDocument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/agents/{did}/deactivate:
+    post:
+      tags: [Identity]
+      operationId: deactivateAgent
+      summary: Deactivate an agent permanently
+      description: >
+        Marks the agent's DID document as inactive in both the persistent store
+        and the in-memory resolver; subsequent trust-checks for this DID will be
+        blocked.
+      parameters:
+        - $ref: '#/components/parameters/AgentDid'
+      responses:
+        '200':
+          description: Agent deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deactivated]
+                properties:
+                  deactivated:
+                    type: string
+                    description: The DID that was deactivated
+              example:
+                deactivated: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Payments ──────────────────────────────────────────────────────────────────
+
+  /v1/payments/eip3009/verify:
+    post:
+      tags: [Payments]
+      operationId: verifyEip3009
+      summary: Verify an EIP-3009 transfer authorization
+      description: >
+        Validates an EIP-3009 TransferWithAuthorization: checks signature
+        recovery, time window, nonce consumption on-chain, and runs an internal
+        Byzantium trust-check on the sender before the agent action proceeds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Eip3009VerifyRequest'
+            example:
+              authorization:
+                token: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+                from: "0xSenderAddress"
+                to: "0xRecipientAddress"
+                value: 1000000
+                valid_after: 1700000000
+                valid_before: 1700086400
+                nonce: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                signature: "0xabc123...65bytes"
+              min_trust_score: 700
+      responses:
+        '200':
+          description: Authorization verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Eip3009VerifyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/payments/solana/verify:
+    post:
+      tags: [Payments]
+      operationId: verifySolana
+      summary: Verify a Solana SPL token transfer
+      description: >
+        Confirms that a finalized Solana transaction matches the expected sender,
+        recipient, mint, and amount, then runs an internal Byzantium trust-check
+        on the sender wallet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolanaTransferProof'
+            example:
+              signature: "5KtPn1LGuxhFCPFd1...base58txsig"
+              from_wallet: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+              to_wallet: "DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy"
+              mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+              amount: 1000000
+              cluster: "mainnet-beta"
+      responses:
+        '200':
+          description: Solana transfer verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolanaVerifyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Keys ──────────────────────────────────────────────────────────────────────
+
+  /v1/keys:
+    post:
+      tags: [Keys]
+      operationId: createKey
+      summary: Create a new operator API key
+      description: >
+        Creates a new API key scoped to the authenticated operator; the raw key
+        value is returned exactly once in this response and is never retrievable
+        again — store it securely.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKeyRequest'
+            example:
+              label: "production-agent-runner"
+              scopes: ["trust:check", "receipts:write"]
+              expires_at: "2026-12-31T23:59:59Z"
+      responses:
+        '200':
+          description: Key created; raw value shown once
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateKeyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      tags: [Keys]
+      operationId: listKeys
+      summary: List API keys for the operator
+      description: >
+        Returns all API keys (active and revoked) for the authenticated operator;
+        the raw key value is never included.
+      responses:
+        '200':
+          description: List of API key records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKeyInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/keys/{id}:
+    delete:
+      tags: [Keys]
+      operationId: revokeKey
+      summary: Revoke an API key by ID
+      description: >
+        Permanently revokes the specified API key for the authenticated operator;
+        any in-flight requests using the key will be rejected after the next
+        auth middleware cycle.
+      parameters:
+        - $ref: '#/components/parameters/KeyId'
+      responses:
+        '200':
+          description: Key revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, id]
+                properties:
+                  status:
+                    type: string
+                    enum: [revoked]
+                  id:
+                    type: string
+                    format: uuid
+              example:
+                status: "revoked"
+                id: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  # ── Observability ─────────────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [Observability]
+      operationId: healthCheck
+      summary: Check gateway and dependency health
+      description: >
+        Returns the health status of the gateway and its dependencies (PostgreSQL,
+        Redis); returns 200 when all checks pass, 503 when any dependency is
+        degraded.
+      security: []
+      responses:
+        '200':
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "ok"
+                service: "byzantium-gateway"
+                version: "0.1.0"
+                checks:
+                  postgres: "ok"
+                  redis: "ok"
+        '503':
+          description: One or more dependencies degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "degraded"
+                service: "byzantium-gateway"
+                version: "0.1.0"
+                checks:
+                  postgres: "ok"
+                  redis:
+                    status: "error"
+                    detail: "connection refused"
+
+  /metrics:
+    get:
+      tags: [Observability]
+      operationId: prometheusMetrics
+      summary: Prometheus metrics scrape endpoint
+      description: >
+        Exposes Prometheus-format metrics; when `METRICS_TOKEN` is configured
+        the request must supply it as a Bearer token, otherwise the endpoint is
+        open. Returns `text/plain; version=0.0.4` as required by the Prometheus
+        exposition format.
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics in text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP byz_trust_checks_total Total trust-check evaluations
+                # TYPE byz_trust_checks_total counter
+                byz_trust_checks_total{verdict="PASS"} 1024
+        '401':
+          description: Missing or invalid metrics Bearer token
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Unauthorized"
+
+# ── Components ────────────────────────────────────────────────────────────────
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Operator API key issued by `POST /v1/keys`. Supply as
+        `Authorization: Bearer <key>`. The auth middleware extracts the
+        `operator_id` from the key row and injects it into the request context.
+
+  parameters:
+    MandateId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the SpendMandate
+
+    ReceiptId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the LiabilityReceipt
+
+    BatchId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the Merkle receipt batch
+
+    AgentDid:
+      name: did
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Decentralised identifier of the agent (e.g. `did:byz:agent:<uuid>`)
+
+    KeyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the API key
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "missing required field: agent_did"
+
+    Unauthorized:
+      description: Missing or invalid Bearer API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "unauthorized"
+
+    NotFound:
+      description: Requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "not found"
+
+    RateLimited:
+      description: Per-key rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "rate limit exceeded"
+
+    InternalError:
+      description: Unexpected server-side error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "internal error: database connection lost"
+
+    ServiceUnavailable:
+      description: Required backend (database) not available
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "database not available"
+
+  schemas:
+
+    # ── Enumerations ──────────────────────────────────────────────────────────
+
+    ActionType:
+      type: string
+      description: >
+        Category of action the agent is requesting to perform.
+        `custom` variants are serialised as a plain string by serde; the enum
+        values below are the fixed variants — any other string is treated as a
+        custom action type.
+      enum:
+        - payment
+        - api_call
+        - data_access
+        - contract_execution
+        - cross_agent_delegation
+      example: payment
+
+    TrustVerdict:
+      type: object
+      description: >
+        Tagged-union verdict produced by the trust pipeline. The `verdict` field
+        discriminates the variant (serialised as `SCREAMING_SNAKE_CASE` by
+        serde's `tag` attribute). `FLAG` and `BLOCK` include a human-readable
+        `reason`.
+      required:
+        - verdict
+      discriminator:
+        propertyName: verdict
+      oneOf:
+        - title: Pass
+          properties:
+            verdict:
+              type: string
+              enum: [PASS]
+          required: [verdict]
+        - title: Flag
+          properties:
+            verdict:
+              type: string
+              enum: [FLAG]
+            reason:
+              type: string
+              description: Human-readable reason the agent was flagged
+          required: [verdict, reason]
+        - title: Block
+          properties:
+            verdict:
+              type: string
+              enum: [BLOCK]
+            reason:
+              type: string
+              description: Human-readable reason the agent was blocked
+          required: [verdict, reason]
+      example:
+        verdict: PASS
+
+    ReceiptOutcome:
+      type: object
+      description: >
+        Tagged-union outcome of a completed agent action (serde `rename_all =
+        snake_case`). `failed` carries a reason string.
+      required:
+        - outcome
+      oneOf:
+        - title: Success
+          properties:
+            outcome:
+              type: string
+              enum: [success]
+          required: [outcome]
+        - title: Failed
+          properties:
+            outcome:
+              type: string
+              enum: [failed]
+            reason:
+              type: string
+          required: [outcome, reason]
+        - title: Pending
+          properties:
+            outcome:
+              type: string
+              enum: [pending]
+          required: [outcome]
+
+    AuthorizationStatus:
+      type: string
+      description: Result of EIP-3009 authorization validation
+      enum:
+        - VALID
+        - INVALID_SIGNATURE
+        - EXPIRED
+        - NOT_YET_VALID
+        - NONCE_USED
+        - TRUST_BLOCKED
+
+    SolanaTransferStatus:
+      type: string
+      description: Result of Solana SPL transfer verification
+      enum:
+        - Verified
+        - NotFinalized
+        - TransactionFailed
+        - MintMismatch
+        - AmountMismatch
+        - SenderMismatch
+        - RecipientMismatch
+        - TrustBlocked
+
+    # ── Core shared types ─────────────────────────────────────────────────────
+
+    Counterparty:
+      type: object
+      description: Identifies the other party in an agent action
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: Operator-defined counterparty identifier
+          example: "merchant-42"
+        chain:
+          type: string
+          description: Blockchain network identifier (e.g. `base`, `solana`)
+          example: "base"
+        address:
+          type: string
+          description: On-chain address of the counterparty (hex or base58)
+          example: "0xAbCd1234..."
+
+    PassToken:
+      type: object
+      description: >
+        Short-lived ML-DSA–signed assertion that the agent passed trust checks
+        at a specific moment under a specific mandate; rails verify the signature
+        offline without calling back to Byzantium.
+      required:
+        - agent_did
+        - verdict
+        - mandate_hash
+        - reputation_threshold_met
+        - valid_until
+        - signature
+      properties:
+        agent_did:
+          type: string
+          description: DID of the agent that passed
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        verdict:
+          $ref: '#/components/schemas/TrustVerdict'
+        mandate_hash:
+          type: string
+          description: SHA-256 Merkle root of the mandate that was enforced
+          example: "a3f5c8..."
+        reputation_threshold_met:
+          type: boolean
+          description: Whether the agent's reputation score was at or above threshold
+        valid_until:
+          type: string
+          format: date-time
+          description: Expiry time; tokens are short-lived (typically 30 seconds)
+          example: "2024-06-01T12:00:30Z"
+        signature:
+          type: string
+          format: byte
+          description: >
+            Base64-encoded ML-DSA signature by the gateway's key over
+            `{agent_did}:{mandate_hash}:{reputation_threshold_met}:{valid_until_unix}`
+
+    # ── Trust ─────────────────────────────────────────────────────────────────
+
+    TrustCheckRequest:
+      type: object
+      description: Input to the trust evaluation pipeline
+      required:
+        - agent_did
+        - action_type
+        - rail_id
+      properties:
+        agent_did:
+          type: string
+          description: DID of the agent requesting to act
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        action_type:
+          $ref: '#/components/schemas/ActionType'
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Transaction value in USD cents (required for `payment` actions)
+          example: 5000
+        counterparty:
+          $ref: '#/components/schemas/Counterparty'
+        rail_id:
+          type: string
+          description: Identifier for the payment or messaging rail originating this request
+          example: "eip3009-base"
+        idempotency_key:
+          type: string
+          description: >
+            Caller-supplied idempotency key; Byzantium does not currently
+            deduplicate on this field but it is logged for tracing
+          example: "req-abc-123"
+
+    TrustCheckResponse:
+      type: object
+      description: Result of the trust evaluation pipeline
+      required:
+        - verdict
+        - request_id
+        - checked_at
+        - latency_ms
+      properties:
+        verdict:
+          $ref: '#/components/schemas/TrustVerdict'
+        token:
+          $ref: '#/components/schemas/PassToken'
+          description: Present only when `verdict` is `PASS`; null otherwise
+          nullable: true
+        request_id:
+          type: string
+          format: uuid
+          description: Server-generated UUID for tracing this evaluation
+        checked_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when the evaluation completed
+        latency_ms:
+          type: integer
+          format: int64
+          minimum: 0
+          description: End-to-end evaluation latency in milliseconds
+
+    # ── Mandates ──────────────────────────────────────────────────────────────
+
+    SpendMandate:
+      type: object
+      description: >
+        Cryptographically-signed policy defining what an agent may do; the
+        `mandate_root` is the SHA-256 Merkle root over all fields, ML-DSA signed
+        by the operator's key.
+      required:
+        - id
+        - agent_did
+        - operator_id
+        - counterparty_whitelist
+        - allowed_action_types
+        - per_tx_cap_cents
+        - daily_cap_cents
+        - valid_from
+        - valid_until
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Globally unique mandate identifier
+        agent_did:
+          type: string
+          description: DID of the governed agent
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        operator_id:
+          type: string
+          description: Identifier of the operator that created this mandate
+          example: "op-acme"
+        counterparty_whitelist:
+          type: array
+          items:
+            type: string
+          description: Set of counterparty IDs the agent may transact with
+          example: ["merchant-42", "vendor-7"]
+        allowed_action_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionType'
+          description: Action types the agent is permitted to perform
+        per_tx_cap_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Maximum value per transaction in USD cents
+          example: 10000
+        daily_cap_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Maximum rolling 24-hour spend in USD cents
+          example: 500000
+        valid_from:
+          type: string
+          format: date-time
+          description: UTC timestamp from which the mandate is active
+        valid_until:
+          type: string
+          format: date-time
+          description: UTC timestamp after which the mandate expires
+        mandate_root:
+          type: string
+          nullable: true
+          description: SHA-256 Merkle root over all mandate fields; null until computed
+          example: "b3d9f1..."
+        signature:
+          type: string
+          format: byte
+          nullable: true
+          description: Base64-encoded ML-DSA signature by the operator over `mandate_root`
+        operator_pubkey:
+          type: string
+          nullable: true
+          description: Operator's ML-DSA public key (hex-encoded)
+
+    CreateMandateRequest:
+      type: object
+      description: Request body for creating a new SpendMandate
+      required:
+        - agent_did
+        - operator_id
+        - counterparty_whitelist
+        - allowed_action_types
+        - per_tx_cap_cents
+        - daily_cap_cents
+      properties:
+        agent_did:
+          type: string
+          description: DID of the agent to govern
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        operator_id:
+          type: string
+          description: Operator identifier (must match the authenticated key's operator)
+          example: "op-acme"
+        counterparty_whitelist:
+          type: array
+          items:
+            type: string
+          description: Counterparty IDs the agent is allowed to interact with
+          example: ["merchant-42", "vendor-7"]
+        allowed_action_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionType'
+          description: Action types the agent is permitted to perform
+        per_tx_cap_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Per-transaction cap in USD cents
+          example: 10000
+        daily_cap_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Rolling 24-hour spend cap in USD cents
+          example: 500000
+        valid_days:
+          type: integer
+          format: int64
+          minimum: 1
+          default: 30
+          description: >
+            Number of days from now that the mandate remains valid (default 30);
+            the gateway sets `valid_from = now` and `valid_until = now + valid_days`
+
+    CreateMandateResponse:
+      type: object
+      required:
+        - mandate_id
+        - agent_did
+      properties:
+        mandate_id:
+          type: string
+          format: uuid
+          description: UUID assigned to the new mandate
+        mandate_root:
+          type: string
+          nullable: true
+          description: SHA-256 Merkle root computed over the mandate fields
+          example: "b3d9f1..."
+        agent_did:
+          type: string
+          description: DID of the governed agent
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+
+    # ── Receipts ──────────────────────────────────────────────────────────────
+
+    CreateReceiptRequest:
+      type: object
+      description: Request body for recording a liability receipt
+      required:
+        - agent_did
+        - action_type
+        - outcome
+        - mandate_id
+        - rail_id
+      properties:
+        agent_did:
+          type: string
+          description: DID of the agent that performed the action
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        action_type:
+          $ref: '#/components/schemas/ActionType'
+        counterparty:
+          $ref: '#/components/schemas/Counterparty'
+          nullable: true
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Transaction value in USD cents (omit for non-payment actions)
+          example: 5000
+        outcome:
+          type: string
+          description: >
+            Serialised `ReceiptOutcome` variant: `success`, `pending`, or
+            `failed` (for `failed` the full tagged object with `reason` must
+            be supplied — see `ReceiptOutcome` schema)
+          example: success
+        mandate_id:
+          type: string
+          format: uuid
+          description: UUID of the mandate that authorised this action
+        rail_id:
+          type: string
+          description: Payment or messaging rail identifier
+          example: "eip3009-base"
+
+    LiabilityReceipt:
+      type: object
+      description: >
+        An ML-DSA–signed record of a completed agent action; added to a rolling
+        Merkle batch for anchoring.
+      required:
+        - id
+        - agent_did
+        - action_type
+        - outcome
+        - mandate_id
+        - rail_id
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Globally unique receipt identifier
+        agent_did:
+          type: string
+          description: DID of the agent
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        action_type:
+          $ref: '#/components/schemas/ActionType'
+        counterparty:
+          $ref: '#/components/schemas/Counterparty'
+          nullable: true
+        amount_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+          description: Transaction value in USD cents
+        outcome:
+          type: string
+          description: Serialised `ReceiptOutcome` variant
+          example: success
+        mandate_id:
+          type: string
+          format: uuid
+          description: UUID of the mandate that authorised the action
+        rail_id:
+          type: string
+          description: Rail identifier
+          example: "eip3009-base"
+        timestamp:
+          type: string
+          format: date-time
+          description: UTC timestamp when the receipt was created
+        signature:
+          type: string
+          format: byte
+          nullable: true
+          description: >
+            Base64-encoded ML-DSA signature by the agent's TEE key over the
+            canonical receipt hash
+
+    InclusionProofResponse:
+      type: object
+      description: Merkle batch membership information for a receipt
+      required:
+        - receipt_id
+        - batch_id
+        - batch_root
+      properties:
+        receipt_id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+        batch_root:
+          type: string
+          description: SHA-256 Merkle root of the batch containing this receipt
+          example: "c4e2a8..."
+        note:
+          type: string
+          description: >
+            Advisory note; full Merkle path generation requires rebuilding the
+            batch tree from stored receipts
+
+    SealBatchResponse:
+      type: object
+      description: Result of force-sealing a Merkle receipt batch
+      required:
+        - batch_id
+        - merkle_root
+        - receipt_count
+        - sealed_at
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        merkle_root:
+          type: string
+          description: SHA-256 Merkle root of all receipts in the batch
+          example: "d5f3b9..."
+        receipt_count:
+          type: integer
+          minimum: 0
+          description: Number of receipts sealed in this batch
+          example: 128
+        sealed_at:
+          type: string
+          format: date-time
+          description: UTC timestamp when the batch was sealed
+
+    # ── Audit ─────────────────────────────────────────────────────────────────
+
+    AuditReceiptEntry:
+      type: object
+      description: A single receipt entry in the audit export
+      required:
+        - receipt_id
+        - agent_did
+        - action_type
+        - rail_id
+        - outcome
+        - timestamp
+        - mandate_id
+      properties:
+        receipt_id:
+          type: string
+          format: uuid
+        agent_did:
+          type: string
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        action_type:
+          type: string
+          description: Debug-formatted ActionType string
+          example: "Payment"
+        amount_cents:
+          type: integer
+          format: int64
+          nullable: true
+        rail_id:
+          type: string
+          example: "eip3009-base"
+        outcome:
+          type: string
+          description: Debug-formatted ReceiptOutcome string
+          example: "Success"
+        timestamp:
+          type: string
+          format: date-time
+        mandate_id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when the receipt has not yet been sealed into a batch
+        batch_merkle_root:
+          type: string
+          nullable: true
+          description: Merkle root of the containing batch; null if unbatched
+        inclusion_proof:
+          description: >
+            Merkle inclusion proof object from `byz-crypto`'s `MerkleProof`;
+            null when not yet batched or when using the PostgreSQL backend
+          nullable: true
+
+    AuditReceiptsResponse:
+      type: object
+      description: Paginated audit receipt export
+      required:
+        - receipts
+        - total
+      properties:
+        receipts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditReceiptEntry'
+        total:
+          type: integer
+          minimum: 0
+          description: Number of receipts in this page (not the grand total across all pages)
+        next_cursor:
+          type: string
+          nullable: true
+          description: >
+            Opaque keyset-pagination cursor; pass as `?cursor=<value>` to fetch
+            the next page. Null when there are no further pages. Only populated
+            when using the PostgreSQL backend.
+
+    BatchProofResponse:
+      type: object
+      description: Merkle proof details for a sealed batch
+      required:
+        - batch_id
+        - merkle_root
+        - receipt_count
+        - sealed_at
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        merkle_root:
+          type: string
+          description: SHA-256 Merkle root of the batch
+          example: "e6g4c1..."
+        receipt_count:
+          type: integer
+          minimum: 0
+        sealed_at:
+          type: string
+          format: date-time
+
+    # ── Identity ──────────────────────────────────────────────────────────────
+
+    RegisterAgentRequest:
+      type: object
+      description: Request body for registering a new agent
+      required:
+        - operator_id
+      properties:
+        operator_id:
+          type: string
+          description: Operator that owns this agent
+          example: "op-acme"
+        kyb_proof:
+          type: string
+          nullable: true
+          description: >
+            Optional KYB (Know Your Business) credential; an opaque string
+            passed to the identity service for verification (e.g. a base64
+            JWT from zkMe)
+
+    RegisterAgentResponse:
+      type: object
+      description: Newly registered agent's DID and public key
+      required:
+        - did
+        - public_key_hex
+      properties:
+        did:
+          type: string
+          description: Generated DID for the agent
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        public_key_hex:
+          type: string
+          description: Dilithium (ML-DSA) public key in lowercase hex
+
+    AgentDocument:
+      type: object
+      description: Agent DID document as stored in the registry
+      required:
+        - did
+        - operator_id
+        - public_key_hex
+        - kyb_verified
+        - active
+      properties:
+        did:
+          type: string
+          example: "did:byz:agent:550e8400-e29b-41d4-a716-446655440000"
+        operator_id:
+          type: string
+          example: "op-acme"
+        public_key_hex:
+          type: string
+          description: Dilithium public key hex
+        kyb_verified:
+          type: boolean
+          description: Whether KYB verification has been completed for this agent
+        active:
+          type: boolean
+          description: False after `POST /v1/agents/{did}/deactivate`
+
+    # ── Payments ──────────────────────────────────────────────────────────────
+
+    TransferAuthorization:
+      type: object
+      description: EIP-3009 TransferWithAuthorization fields for USDC on Base (chain ID 8453)
+      required:
+        - token
+        - from
+        - to
+        - value
+        - valid_after
+        - valid_before
+        - nonce
+        - signature
+      properties:
+        token:
+          type: string
+          description: ERC-20 token contract address (lowercase hex, 0x-prefixed)
+          example: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+        from:
+          type: string
+          description: Sender's Ethereum address (0x-prefixed)
+          example: "0xSenderAddress"
+        to:
+          type: string
+          description: Recipient's Ethereum address (0x-prefixed)
+          example: "0xRecipientAddress"
+        value:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >
+            Transfer amount in the token's smallest unit (USDC uses 6 decimals;
+            1 USDC = 1_000_000)
+          example: 1000000
+        valid_after:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Unix timestamp — authorization is not valid before this second
+          example: 1700000000
+        valid_before:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Unix timestamp — authorization expires after this second
+          example: 1700086400
+        nonce:
+          type: string
+          description: 32-byte unique nonce (hex, 0x-prefixed) preventing replay attacks
+          example: "0x0000000000000000000000000000000000000000000000000000000000000001"
+        signature:
+          type: string
+          description: >
+            EIP-712 secp256k1 signature (65 bytes hex, 0x-prefixed): r ++ s ++ v
+          example: "0xabc123...65byteshex"
+
+    Eip3009VerifyRequest:
+      type: object
+      description: Request body for EIP-3009 authorization verification
+      required:
+        - authorization
+      properties:
+        authorization:
+          $ref: '#/components/schemas/TransferAuthorization'
+        min_trust_score:
+          type: integer
+          format: int32
+          minimum: 0
+          maximum: 1000
+          nullable: true
+          description: >
+            Optional override for the Byzantium reputation threshold applied to
+            the sender; uses the server default when omitted
+
+    Eip3009VerifyResponse:
+      type: object
+      description: Result of EIP-3009 authorization verification
+      required:
+        - status
+        - valid
+        - value
+        - message
+      properties:
+        status:
+          $ref: '#/components/schemas/AuthorizationStatus'
+        valid:
+          type: boolean
+          description: True only when `status` is `VALID`
+        recovered_from:
+          type: string
+          nullable: true
+          description: Ethereum address recovered from the signature; null on signature failure
+        value:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Transfer amount from the authorization (token's smallest unit)
+          example: 1000000
+        message:
+          type: string
+          description: Human-readable explanation of the status
+          example: "Authorization is valid"
+
+    SolanaTransferProof:
+      type: object
+      description: Solana SPL token transfer proof for verification
+      required:
+        - signature
+        - from_wallet
+        - to_wallet
+        - mint
+        - amount
+        - cluster
+      properties:
+        signature:
+          type: string
+          description: Finalized Solana transaction signature (base58)
+          example: "5KtPn1LGuxhFCPFd1...base58txsig"
+        from_wallet:
+          type: string
+          description: Expected sender wallet public key (base58)
+          example: "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+        to_wallet:
+          type: string
+          description: Expected recipient wallet public key (base58)
+          example: "DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy"
+        mint:
+          type: string
+          description: >
+            SPL token mint address (base58); USDC mainnet =
+            `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
+          example: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        amount:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Expected amount in the token's smallest unit (USDC = 6 decimals)
+          example: 1000000
+        cluster:
+          type: string
+          description: Solana cluster to verify against
+          enum:
+            - mainnet-beta
+            - devnet
+            - testnet
+          example: "mainnet-beta"
+
+    SolanaVerifyResponse:
+      type: object
+      description: Result of Solana SPL transfer verification
+      required:
+        - status
+        - valid
+      properties:
+        status:
+          $ref: '#/components/schemas/SolanaTransferStatus'
+        valid:
+          type: boolean
+          description: True only when `status` is `Verified`
+        slot:
+          type: integer
+          format: int64
+          nullable: true
+          description: Solana slot in which the transaction was finalized
+        fee_lamports:
+          type: integer
+          format: int64
+          nullable: true
+          description: Transaction fee paid in lamports
+
+    # ── Keys ──────────────────────────────────────────────────────────────────
+
+    CreateKeyRequest:
+      type: object
+      description: Request body for creating a new operator API key
+      required:
+        - label
+      properties:
+        label:
+          type: string
+          description: Human-readable label for identifying this key
+          example: "production-agent-runner"
+        scopes:
+          type: array
+          items:
+            type: string
+          default: []
+          description: >
+            List of permission scopes for this key (e.g. `trust:check`,
+            `receipts:write`, `audit:read`); empty array grants all scopes
+          example: ["trust:check", "receipts:write"]
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: UTC expiry timestamp; null for non-expiring keys
+          example: "2026-12-31T23:59:59Z"
+
+    CreateKeyResponse:
+      type: object
+      description: >
+        Newly created API key; the `key` field contains the raw token and is
+        shown exactly once — it cannot be retrieved again.
+      required:
+        - id
+        - key
+        - label
+        - scopes
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Stable UUID for this key (used for revocation)
+        key:
+          type: string
+          description: Raw API key value — store securely; shown once only
+          example: "byz_live_abc123..."
+        label:
+          type: string
+          example: "production-agent-runner"
+        scopes:
+          type: array
+          items:
+            type: string
+          example: ["trust:check", "receipts:write"]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApiKeyInfo:
+      type: object
+      description: API key metadata (raw key value never included)
+      required:
+        - id
+        - label
+        - operator_id
+        - scopes
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          example: "production-agent-runner"
+        operator_id:
+          type: string
+          example: "op-acme"
+        scopes:
+          type: array
+          items:
+            type: string
+          example: ["trust:check", "receipts:write"]
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Populated when the key has been revoked; null if still active
+
+    # ── Observability ─────────────────────────────────────────────────────────
+
+    HealthResponse:
+      type: object
+      description: Gateway and dependency health status
+      required:
+        - status
+        - service
+        - version
+        - checks
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          description: "`ok` when all dependency checks pass, `degraded` otherwise"
+        service:
+          type: string
+          example: "byzantium-gateway"
+        version:
+          type: string
+          description: Gateway version (from `CARGO_PKG_VERSION`)
+          example: "0.1.0"
+        checks:
+          type: object
+          description: >
+            Map from dependency name (`postgres`, `redis`) to either the string
+            `"ok"` / `"not_configured"` or an error object with `status` and
+            `detail` fields
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: object
+                required: [status, detail]
+                properties:
+                  status:
+                    type: string
+                    example: "error"
+                  detail:
+                    type: string
+                    example: "connection refused"
+
+    # ── Shared ────────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      description: Standard error envelope returned on 4xx and 5xx responses
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "missing required field: agent_did"

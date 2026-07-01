@@ -1,0 +1,20 @@
+[package]
+name = "byz-anchor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+byz-receipt = { path = "../byz-receipt" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+base64 = { workspace = true }

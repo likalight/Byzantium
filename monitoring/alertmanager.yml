@@ -1,0 +1,29 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  receiver: 'webhook'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'webhook'
+      repeat_interval: 1h
+
+receivers:
+  - name: 'webhook'
+    webhook_configs:
+      - url: '${ALERTMANAGER_WEBHOOK_URL}'
+        send_resolved: true
+        http_config:
+          bearer_token: '${ALERTMANAGER_WEBHOOK_TOKEN}'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']

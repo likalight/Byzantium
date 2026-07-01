@@ -1,0 +1,84 @@
+groups:
+  - name: byzantium.slo
+    interval: 30s
+    rules:
+      # P99 latency > 200ms (Byzantium's core SLO)
+      - alert: TrustCheckLatencyHigh
+        expr: histogram_quantile(0.99, rate(byzantium_trust_check_duration_seconds_bucket[5m])) > 0.200
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trust-check P99 latency exceeds 200ms SLO"
+          description: "P99 latency is {{ $value | humanizeDuration }} over the last 5m"
+
+      # Error rate > 1%
+      - alert: TrustCheckErrorRateHigh
+        expr: rate(byzantium_trust_check_errors_total[5m]) / rate(byzantium_trust_checks_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trust-check error rate exceeds 1%"
+          description: "Error rate is {{ $value | humanizePercentage }}"
+
+      # BLOCK rate spike (> 30% of checks blocked)
+      - alert: TrustCheckBlockRateHigh
+        expr: rate(byzantium_trust_checks_total{verdict="BLOCK"}[5m]) / rate(byzantium_trust_checks_total[5m]) > 0.30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of BLOCK verdicts (>30%)"
+          description: "{{ $value | humanizePercentage }} of trust checks are being blocked"
+
+      # Reputation cache hit rate drops below 70%
+      - alert: ReputationCacheHitRateLow
+        expr: rate(byzantium_cache_hits_total[10m]) / (rate(byzantium_cache_hits_total[10m]) + rate(byzantium_cache_misses_total[10m])) < 0.70
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Reputation proof cache hit rate below 70%"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}"
+
+      # Gateway is down (scrape fails for 1 minute)
+      - alert: ByzantiumGatewayDown
+        expr: up{job="byzantium"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Byzantium gateway is unreachable"
+          description: "Prometheus cannot scrape the gateway at {{ $labels.instance }}"
+
+      # Receipt batch not anchored for >1 hour
+      - alert: AnchorStale
+        expr: time() - byzantium_last_anchor_timestamp_seconds > 3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No Bitcoin/immudb anchor in over 1 hour"
+          description: "Last anchor was {{ $value | humanizeDuration }} ago"
+
+  - name: byzantium.infrastructure
+    rules:
+      # PostgreSQL connection pool exhausted
+      - alert: PostgresConnectionPoolExhausted
+        expr: byzantium_db_pool_available == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL connection pool exhausted"
+
+      # High rate limit rejections (> 100/min across all keys)
+      - alert: RateLimitRejectionSpike
+        expr: rate(byzantium_rate_limit_rejected_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Spike in rate-limit rejections (>100/min)"
+          description: "{{ $value }} rejections/min — possible abuse or misconfigured client"

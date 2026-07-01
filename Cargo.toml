@@ -1,0 +1,57 @@
+[workspace]
+members = [
+    "crates/byz-common",
+    "crates/byz-crypto",
+    "crates/byz-identity",
+    "crates/byz-mandate",
+    "crates/byz-reputation",
+    "crates/byz-receipt",
+    "crates/byz-anchor",
+    "crates/byz-proof",
+    "crates/byz-store",
+    "crates/byz-tee",
+    "crates/byz-gateway",
+    "crates/byz-rail-x402",
+    "crates/byz-rail-a2a",
+    "crates/byz-rail-eip3009",
+    "crates/byz-rail-solana",
+    "crates/byz-sdk",
+    "crates/byz-billing",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "timeout"] }
+thiserror = "1"
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = { version = "0.22", features = ["trace"] }
+opentelemetry-otlp = { version = "0.15", features = ["grpc-tonic"] }
+opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.14"
+tracing-opentelemetry = "0.23"
+tonic = "0.11"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+rand = "0.8"
+base64 = "0.21"
+pqcrypto-dilithium = "0.5"
+pqcrypto-kyber = "0.8"
+pqcrypto-traits = "0.3"
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "uuid", "chrono"] }
+config = "0.14"
+dotenvy = "0.15"
+neo4rs = "0.8"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+dashmap = "5"
+bincode = "1"

@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: default
+spec:
+  schedule: "0 2 * * *"   # 2am UTC daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: byzantium-secrets
+                      key: POSTGRES_PASSWORD
+                - name: S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: byzantium-secrets
+                      key: BACKUP_S3_BUCKET
+                      optional: true
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+                  FILENAME="byzantium_${TIMESTAMP}.sql.gz"
+                  echo "Starting backup: $FILENAME"
+
+                  pg_dump \
+                    -h postgres \
+                    -U byzantium \
+                    -d byzantium \
+                    --no-owner \
+                    --no-acl \
+                    | gzip > /tmp/$FILENAME
+
+                  echo "Backup size: $(du -sh /tmp/$FILENAME | cut -f1)"
+
+                  # Upload to S3 if bucket is configured
+                  if [ -n "${S3_BUCKET:-}" ]; then
+                    aws s3 cp /tmp/$FILENAME s3://${S3_BUCKET}/postgres/$FILENAME
+                    echo "Uploaded to s3://${S3_BUCKET}/postgres/$FILENAME"
+                    # Prune backups older than 30 days
+                    aws s3 ls s3://${S3_BUCKET}/postgres/ \
+                      | awk '{print $4}' \
+                      | sort \
+                      | head -n -30 \
+                      | xargs -I{} aws s3 rm s3://${S3_BUCKET}/postgres/{}
+                  else
+                    echo "S3_BUCKET not set — backup stored locally at /tmp/$FILENAME only"
+                    echo "WARNING: local-only backups are lost when the pod restarts"
+                  fi
+
+                  echo "Backup complete: $FILENAME"
+              resources:
+                requests:
+                  memory: "128Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "256Mi"
+                  cpu: "500m"

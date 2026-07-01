@@ -1,0 +1,14 @@
+[package]
+name = "byz-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }

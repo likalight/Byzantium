@@ -47,6 +47,39 @@ export async function getAgent(did: string) {
   return r.json();
 }
 
+// ── Fetch.ai AgentVerse — real public AI agent registry ───────────────────────
+export interface AgentVerseAgent {
+  address: string;
+  name: string;
+  status: string;
+  tags: string[];
+  readme?: string;
+  updatedAt?: string;
+}
+
+export async function fetchLiveAgents(limit = 12): Promise<AgentVerseAgent[]> {
+  try {
+    const r = await fetch(
+      `https://agentverse.ai/v1/almanac/agents?limit=${limit}&sort=updatedAt`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    if (!r.ok) throw new Error(`${r.status}`);
+    const data = await r.json();
+    // API returns { agents: [...] } or an array directly
+    return Array.isArray(data) ? data : (data.agents ?? data.items ?? []);
+  } catch {
+    return [];
+  }
+}
+
+// Map an AgentVerse agent address to a fake-but-plausible reputation score
+// (deterministic so it doesn't change on re-render)
+export function agentScore(address: string): number {
+  let h = 0;
+  for (let i = 0; i < address.length; i++) h = (Math.imul(31, h) + address.charCodeAt(i)) | 0;
+  return 200 + (Math.abs(h) % 800); // 200–999
+}
+
 // Mock data for demo when API is unavailable
 export const mockStats = {
   totalChecks: 12847,

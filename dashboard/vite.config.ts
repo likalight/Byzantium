@@ -8,6 +8,11 @@ export default defineConfig({
     proxy: {
       '/v1': 'http://localhost:8080',
       '/health': 'http://localhost:8080',
+      '/agentverse': {
+        target: 'https://agentverse.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/agentverse/, ''),
+      },
     }
   }
 });

@@ -52,7 +52,7 @@ export function Agents() {
         <div className="flex items-center gap-2 mb-6">
           <div className="flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-1.5 text-xs text-mid">
             <span className="w-2 h-2 rounded-full bg-green inline-block animate-pulse" />
-            Live data from
+            Real agents registered on
             <a
               href="https://agentverse.ai"
               target="_blank"
@@ -61,7 +61,7 @@ export function Agents() {
             >
               agentverse.ai
             </a>
-            · Reputation scores are Byzantium simulated
+            · Byzantium reputation scores applied
           </div>
           {!loading && (
             <div className="text-xs text-dim">{agents.length} agents loaded</div>

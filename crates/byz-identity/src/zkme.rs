@@ -20,6 +20,7 @@ pub struct ZkMeAttestation {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ZkMeVerifyResponse {
     success: bool,
     #[serde(rename = "isVerified")]
@@ -49,8 +50,8 @@ impl ZkMeClient {
 
     pub fn from_env() -> Option<Self> {
         let key = std::env::var("ZKME_API_KEY").ok()?;
-        let url = std::env::var("ZKME_API_URL")
-            .unwrap_or_else(|_| "https://nest-api.zk.me".to_string());
+        let url =
+            std::env::var("ZKME_API_URL").unwrap_or_else(|_| "https://nest-api.zk.me".to_string());
         Some(Self::new(url, key))
     }
 

@@ -25,6 +25,8 @@ byz-crypto = { path = "../byz-crypto" }
 byz-identity = { path = "../byz-identity" }
 byz-mandate = { path = "../byz-mandate" }
 byz-reputation = { path = "../byz-reputation" }
+byz-underwrite = { path = "../byz-underwrite" }
+byz-provenance = { path = "../byz-provenance" }
 byz-receipt = { path = "../byz-receipt" }
 byz-anchor = { path = "../byz-anchor" }
 byz-proof = { path = "../byz-proof" }

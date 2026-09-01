@@ -1,0 +1,19 @@
+[package]
+name = "byz-tap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+byz-common = { path = "../byz-common" }
+byz-crypto = { path = "../byz-crypto" }
+byz-underwrite = { path = "../byz-underwrite" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+byz-reputation = { path = "../byz-reputation" }

@@ -17,6 +17,6 @@ pub mod authorization;
 pub mod error;
 pub mod verifier;
 
-pub use authorization::{TransferAuthorization, AuthorizationStatus};
+pub use authorization::{AuthorizationStatus, TransferAuthorization};
 pub use error::Eip3009Error;
 pub use verifier::Eip3009Verifier;

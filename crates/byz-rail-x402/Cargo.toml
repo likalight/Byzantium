@@ -7,6 +7,7 @@ description = "Byzantium x402 HTTP payment rail adapter"
 [dependencies]
 byz-common = { path = "../byz-common" }
 byz-crypto = { path = "../byz-crypto" }
+byz-underwrite = { path = "../byz-underwrite" }
 
 axum        = { workspace = true }
 tokio       = { workspace = true }

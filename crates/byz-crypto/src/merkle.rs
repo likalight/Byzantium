@@ -83,7 +83,7 @@ impl MerkleTree {
         let mut current_index = index;
 
         for level in &self.levels[..self.levels.len() - 1] {
-            let sibling_index = if current_index % 2 == 0 {
+            let sibling_index = if current_index.is_multiple_of(2) {
                 // left node — sibling is to the right (or self if last)
                 (current_index + 1).min(level.len() - 1)
             } else {
@@ -91,7 +91,7 @@ impl MerkleTree {
             };
             siblings.push(MerkleSibling {
                 hash: hex::encode(&level[sibling_index]),
-                position: if current_index % 2 == 0 {
+                position: if current_index.is_multiple_of(2) {
                     SiblingPosition::Right
                 } else {
                     SiblingPosition::Left
@@ -135,12 +135,12 @@ impl MerkleProof {
     /// Verify this proof against a known root hex string.
     /// Runs entirely in ~log2(N) SHA-256 operations — browser-verifiable via WebCrypto.
     pub fn verify(&self, expected_root: &str) -> ByzResult<()> {
-        let mut current = hex::decode(&self.leaf_hash)
-            .map_err(|_| ByzantiumError::MerkleProofInvalid)?;
+        let mut current =
+            hex::decode(&self.leaf_hash).map_err(|_| ByzantiumError::MerkleProofInvalid)?;
 
         for sibling in &self.siblings {
-            let sib_bytes = hex::decode(&sibling.hash)
-                .map_err(|_| ByzantiumError::MerkleProofInvalid)?;
+            let sib_bytes =
+                hex::decode(&sibling.hash).map_err(|_| ByzantiumError::MerkleProofInvalid)?;
             current = match sibling.position {
                 SiblingPosition::Right => combine(&current, &sib_bytes),
                 SiblingPosition::Left => combine(&sib_bytes, &current),

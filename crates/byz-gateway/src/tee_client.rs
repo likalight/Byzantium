@@ -8,7 +8,7 @@
 //! Hot path: mandate check → enclave signs response → gateway verifies sig.
 //! Graceful fallback: if the enclave is unreachable, falls back to in-process.
 
-use byz_common::{ActionType, AgentDid, ByzantiumError, ByzResult, Counterparty, SpendMandate};
+use byz_common::{ActionType, AgentDid, ByzResult, ByzantiumError, Counterparty, SpendMandate};
 use byz_crypto::dilithium::{DilithiumPublicKey, DilithiumSignature};
 use serde::{Deserialize, Serialize};
 
@@ -20,48 +20,48 @@ struct AttestationResponse {
 
 #[derive(Debug, Clone, Serialize)]
 struct TeeCheckRequest<'a> {
-    agent_did:    &'a str,
-    action_type:  &'a ActionType,
+    agent_did: &'a str,
+    action_type: &'a ActionType,
     amount_cents: Option<u64>,
     counterparty: Option<&'a Counterparty>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TeeCheckResponse {
-    compliant:          bool,
-    mandate_hash:       String,
+    compliant: bool,
+    mandate_hash: String,
     /// ML-DSA signature by enclave key over "agent_did:mandate_hash:compliant:ts"
-    enclave_signature:  String,
+    enclave_signature: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct TeeCommitmentResponse {
-    commitment_hex:           String,
-    meets_default_threshold:  bool,
-    threshold_proof:          Option<Vec<u8>>,
+    commitment_hex: String,
+    meets_default_threshold: bool,
+    threshold_proof: Option<Vec<u8>>,
 }
 
 /// Lightweight HTTP client to the two TEE services.
 #[derive(Clone)]
 pub struct TeeClient {
-    mandate_url:    String,
+    mandate_url: String,
     reputation_url: String,
-    http:           reqwest::Client,
+    http: reqwest::Client,
     /// Enclave signing public keys — pinned during startup via attestation.
-    mandate_pubkey:    Option<DilithiumPublicKey>,
+    mandate_pubkey: Option<DilithiumPublicKey>,
     reputation_pubkey: Option<DilithiumPublicKey>,
 }
 
 impl TeeClient {
     pub fn new(mandate_port: u16, reputation_port: u16) -> Self {
         Self {
-            mandate_url:    format!("http://127.0.0.1:{}", mandate_port),
+            mandate_url: format!("http://127.0.0.1:{}", mandate_port),
             reputation_url: format!("http://127.0.0.1:{}", reputation_port),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_millis(150))
                 .build()
                 .expect("tee http client"),
-            mandate_pubkey:    None,
+            mandate_pubkey: None,
             reputation_pubkey: None,
         }
     }
@@ -74,9 +74,13 @@ impl TeeClient {
             return None;
         }
         let mandate_port = std::env::var("MANDATE_ENGINE_PORT")
-            .ok().and_then(|p| p.parse().ok()).unwrap_or(9001);
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(9001);
         let reputation_port = std::env::var("REPUTATION_TEE_PORT")
-            .ok().and_then(|p| p.parse().ok()).unwrap_or(9002);
+            .ok()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(9002);
         Some(Self::new(mandate_port, reputation_port))
     }
 
@@ -93,7 +97,9 @@ impl TeeClient {
             .get(format!("{}/internal/attestation", self.mandate_url))
             .send()
             .await
-            .map_err(|e| ByzantiumError::Tee(format!("mandate-tee attestation unreachable: {e}")))?;
+            .map_err(|e| {
+                ByzantiumError::Tee(format!("mandate-tee attestation unreachable: {e}"))
+            })?;
 
         if !mandate_resp.status().is_success() {
             return Err(ByzantiumError::Tee(format!(
@@ -133,7 +139,9 @@ impl TeeClient {
             .get(format!("{}/internal/attestation", self.reputation_url))
             .send()
             .await
-            .map_err(|e| ByzantiumError::Tee(format!("reputation-tee attestation unreachable: {e}")))?;
+            .map_err(|e| {
+                ByzantiumError::Tee(format!("reputation-tee attestation unreachable: {e}"))
+            })?;
 
         if !rep_resp.status().is_success() {
             return Err(ByzantiumError::Tee(format!(
@@ -180,8 +188,8 @@ impl TeeClient {
         counterparty: Option<&Counterparty>,
     ) -> ByzResult<(bool, String)> {
         let body = TeeCheckRequest {
-            agent_did:    agent_did.as_str(),
-            action_type:  action,
+            agent_did: agent_did.as_str(),
+            action_type: action,
             amount_cents,
             counterparty,
         };
@@ -252,7 +260,10 @@ impl TeeClient {
 
         let resp = self
             .http
-            .post(format!("{}/internal/reputation/commitment", self.reputation_url))
+            .post(format!(
+                "{}/internal/reputation/commitment",
+                self.reputation_url
+            ))
             .json(&body)
             .send()
             .await

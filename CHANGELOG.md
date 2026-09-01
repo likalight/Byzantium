@@ -6,6 +6,65 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+**The underwriting layer.** Byzantium previously enforced a mandate whose caps an
+operator typed. It now *issues* them. `MandateBuilder::per_tx_cap_cents` and the
+0–1000 reputation score never touched: the score was reduced to a single boolean
+by `meets_threshold` and discarded. That connection is the new `byz-underwrite`
+crate.
+
+- `byz-underwrite`: score → limit through five controls, each able to reduce or
+  refuse and each recording a typed `DecisionReason` — standing gates, sublinear
+  growth in settled value, an experience cap, a per-window rate cap, and
+  principal consolidation
+- `LimitAttestation`: short-lived, ML-DSA-signed, portable limit carrying a
+  ceiling, window, currency scope, chain and asset-class scope, risk tier,
+  evidence hash, guarantee and collateral requirement
+- `byz-provenance`: runtime-signed execution traces with replay and monotonicity
+  defence, Merkle bundling, and inclusion proofs. Payloads are committed to by
+  hash only
+- `byz-passport`: principal → agent → session delegation with enforced scope
+  narrowing and key rotation that preserves standing
+- `byz-tap`: RFC 9421 HTTP Message Signatures plus a `Limit-Attestation`
+  extension that must appear in the signature's covered components
+- `Guarantor` trait with `BureauGuarantor` and `BackedGuarantor`, so the
+  bureau/underwriter liability model is pluggable rather than assumed
+- `RevocationRegistry`: per-subject cutoffs for agents and principals, with
+  future cutoffs acting as scheduled revocations
+- Multicurrency `Money` with per-currency minor-unit exponents, FX applied at
+  presentation, and asset-class haircuts on exposure
+- `ExposureLedger` trait tracking `at_risk` separately from `window_used`, with
+  export/import so exposure survives a restart
+- Endpoints: `/v1/principals`, `/v1/limits/issue`, `/v1/limits/verify`,
+  `/v1/limits/settle`, `/v1/limits/revoke`, `/v1/provenance`, `/v1/runtimes`
+- Migration `004_underwriting.sql` and `UnderwritingRepository`
+- x402 facilitator path that honours a presented attestation
+- TypeScript `ProvenanceRecorder` and limits client; Rust SDK limit methods
+
+### Changed
+
+- **A new agent now scores 0, not a neutral 500.** A non-zero score for an agent
+  with no history is a free limit for anyone who can generate a keypair;
+  cold-start standing comes from the KYC'd principal instead. The gateway e2e
+  suite was updated accordingly — it had encoded the old default as an
+  expectation
+- The reputation scorer is value-weighted, recency-decayed and sublinear rather
+  than a compliance ratio, with velocity-spike detection, counterparty
+  concentration discounting, and zero credit for related-party volume
+- `MandateEngine` accounts through an `ExposureLedger` instead of a per-process
+  `HashMap`, and counts outstanding commitments against the window cap
+- `Cargo.lock` is now committed — the workspace ships a binary, and without a
+  lockfile the deployed build is not reproducible
+
+### Fixed
+
+- Exposure no longer resets to zero on restart
+- A `u64 >= 0` assertion in the gateway e2e suite that could never fail
+- `base64::encode`/`decode` deprecation warnings across the workspace
+- Workspace is clean under `cargo fmt --check` and `clippy -D warnings`
+
+
 ## [0.1.0] - 2026-07-01
 
 ### Added

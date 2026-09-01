@@ -1,9 +1,9 @@
+use crate::{error::BillingError, StripeClient};
+use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 use tracing::{info, warn};
-use crate::{StripeClient, error::BillingError};
 
 #[derive(Debug, Clone)]
 pub struct KeyUsage {
@@ -28,15 +28,20 @@ impl UsageMeter {
     pub async fn record(&self, api_key: &str) {
         let mut map = self.counters.lock().await;
         map.entry(api_key.to_string())
-            .or_insert(KeyUsage { trust_checks: 0, stripe_subscription_item_id: None })
+            .or_insert(KeyUsage {
+                trust_checks: 0,
+                stripe_subscription_item_id: None,
+            })
             .trust_checks += 1;
     }
 
     /// Register the Stripe subscription item id for an API key.
     pub async fn register_key(&self, api_key: &str, stripe_sub_item_id: &str) {
         let mut map = self.counters.lock().await;
-        let entry = map.entry(api_key.to_string())
-            .or_insert(KeyUsage { trust_checks: 0, stripe_subscription_item_id: None });
+        let entry = map.entry(api_key.to_string()).or_insert(KeyUsage {
+            trust_checks: 0,
+            stripe_subscription_item_id: None,
+        });
         entry.stripe_subscription_item_id = Some(stripe_sub_item_id.to_string());
     }
 
@@ -47,10 +52,14 @@ impl UsageMeter {
         let mut errors = vec![];
 
         for (key, usage) in map.iter_mut() {
-            if usage.trust_checks == 0 { continue; }
+            if usage.trust_checks == 0 {
+                continue;
+            }
             let qty = usage.trust_checks;
 
-            if let (Some(stripe), Some(ref sub_item)) = (&self.stripe, &usage.stripe_subscription_item_id) {
+            if let (Some(stripe), Some(ref sub_item)) =
+                (&self.stripe, &usage.stripe_subscription_item_id)
+            {
                 match stripe.report_usage(sub_item, qty, now).await {
                     Ok(_) => {
                         info!(api_key = %key, quantity = qty, "usage flushed to Stripe");
@@ -72,7 +81,9 @@ impl UsageMeter {
 
     /// Get current unbilled count for an API key.
     pub async fn current_usage(&self, api_key: &str) -> u64 {
-        self.counters.lock().await
+        self.counters
+            .lock()
+            .await
             .get(api_key)
             .map(|u| u.trust_checks)
             .unwrap_or(0)

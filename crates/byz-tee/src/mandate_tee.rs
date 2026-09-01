@@ -7,10 +7,15 @@
 //! before trusting any response from this service.
 
 use anyhow::Result;
-use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
-use byz_common::{ActionType, AgentDid, ByzResult, Counterparty, SpendMandate};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use byz_common::{ActionType, AgentDid, Counterparty, SpendMandate};
 use byz_crypto::DilithiumKeypair;
-use byz_mandate::engine::{ComplianceResult, MandateEngine, MandateStore};
+use byz_mandate::engine::{MandateEngine, MandateStore};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -46,7 +51,12 @@ async fn mandate_check(
     let did = AgentDid::new(&req.agent_did);
     let engine = state.engine.read().await;
     let result = engine
-        .check(&did, &req.action_type, req.amount_cents, req.counterparty.as_ref())
+        .check(
+            &did,
+            &req.action_type,
+            req.amount_cents,
+            req.counterparty.as_ref(),
+        )
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -94,9 +104,7 @@ struct AttestationResponse {
     mrenclave: String,
 }
 
-async fn attestation(
-    State(state): State<TeeState>,
-) -> Json<AttestationResponse> {
+async fn attestation(State(state): State<TeeState>) -> Json<AttestationResponse> {
     let mrenclave = std::env::var("BYZ_MRENCLAVE").unwrap_or_else(|_| "dev".to_string());
     Json(AttestationResponse {
         pubkey_hex: state.signing_key.public_key.to_hex(),

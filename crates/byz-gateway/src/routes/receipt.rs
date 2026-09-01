@@ -1,3 +1,4 @@
+use crate::state::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -5,11 +6,10 @@ use axum::{
 };
 use byz_common::{ActionType, AgentDid, Counterparty, LiabilityReceipt, ReceiptOutcome};
 use byz_crypto::DilithiumKeypair;
-use byz_receipt::{batch::BatchInclusionProof, receipt::ReceiptSigner};
+use byz_receipt::receipt::ReceiptSigner;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
-use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateReceiptRequest {
@@ -37,12 +37,20 @@ pub async fn create_receipt(
             req.mandate_id,
             req.rail_id,
         )
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     // Persist to PostgreSQL.
     if let Some(store) = &state.store {
         store.receipts.insert(&receipt).await.map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
     }
 
@@ -72,7 +80,10 @@ pub async fn inclusion_proof(
     if let Some(store) = &state.store {
         if let Ok(Some(batch_id)) = store.receipts.batch_id_for_receipt(receipt_id).await {
             let batch_root = store.batches.get_root(batch_id).await.map_err(|e| {
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
             })?;
             return Ok(Json(json!({
                 "receipt_id": receipt_id,

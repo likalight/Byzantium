@@ -3,9 +3,8 @@
 //! Runs every 5 minutes. Seals any pending receipt batch, then anchors the
 //! Merkle root to immudb (always) and Bitcoin (if configured).
 
-use byz_anchor::{AnchorService, ImmudbClient};
-use byz_common::config::ImmudbConfig;
 use crate::state::AppState;
+use byz_anchor::{AnchorService, ImmudbClient};
 
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {

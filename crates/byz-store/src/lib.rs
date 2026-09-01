@@ -3,7 +3,10 @@ pub mod postgres;
 pub mod redis_store;
 
 pub use neo4j::ReputationGraph;
-pub use postgres::{AgentRepository, ApiKeyRepository, ApiKeyRow, BatchRepository, MandateRepository, ReceiptRepository, ReceiptRow, Db};
+pub use postgres::{
+    AgentRepository, ApiKeyRepository, ApiKeyRow, BatchRepository, Db, IssuedLimitRow,
+    MandateRepository, ReceiptRepository, ReceiptRow, UnderwritingRepository,
+};
 pub use redis_store::ProofCache;
 
 use byz_common::config::Config;
@@ -20,6 +23,8 @@ pub struct Store {
     pub api_keys: ApiKeyRepository,
     pub proof_cache: ProofCache,
     pub reputation_graph: ReputationGraph,
+    /// Standing, issued limits, exposure, provenance and revocation cutoffs.
+    pub underwriting: UnderwritingRepository,
     /// Shared PostgreSQL pool — exposed for lightweight health probes.
     pub pool: Db,
 }
@@ -45,6 +50,7 @@ impl Store {
             receipts: ReceiptRepository::new(db.clone()),
             batches: BatchRepository::new(db.clone()),
             api_keys: ApiKeyRepository::new(db.clone()),
+            underwriting: UnderwritingRepository::new(db.clone()),
             proof_cache: ProofCache::new(redis_mgr, config.redis.proof_cache_ttl_secs),
             reputation_graph: ReputationGraph::new(neo4j),
             pool: db,

@@ -5,9 +5,10 @@
 //! The ZK mandate-compliance circuit (byz-proof) proves range/membership
 //! constraints against this root without revealing the policy internals.
 
-use byz_common::{ActionType, AgentDid, ByzResult, SpendMandate};
+use byz_common::{ActionType, AgentDid, ByzResult, ByzantiumError, SpendMandate};
 use byz_crypto::sha256_hex;
-use chrono::{DateTime, Utc};
+use byz_underwrite::UnderwritingDecision;
+use chrono::{DateTime, Duration, Utc};
 use serde_json::json;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -67,12 +68,63 @@ impl MandateBuilder {
         self
     }
 
+    /// Build a mandate from an underwriting decision rather than from numbers an
+    /// operator typed.
+    ///
+    /// This is the inversion the whole system turns on. `per_tx_cap_cents` and
+    /// `daily_cap_cents` stop being configuration and become the output of a risk
+    /// process, which is what makes the resulting mandate portable: the same
+    /// evidence produces the same caps wherever it is presented.
+    ///
+    /// Note that the cap fields carry minor units of the decision's unit of
+    /// account, which is not necessarily USD despite the historical field names.
+    ///
+    /// The counterparty whitelist stays with the operator. Underwriting decides
+    /// *how much*; it does not decide *who* an agent is allowed to pay.
+    pub fn from_decision(
+        decision: &UnderwritingDecision,
+        operator_id: impl Into<String>,
+        counterparty_whitelist: Vec<String>,
+    ) -> ByzResult<SpendMandate> {
+        if !decision.is_issued() {
+            return Err(ByzantiumError::MandateViolation(
+                "cannot build a mandate from a refused underwriting decision".to_string(),
+            ));
+        }
+
+        let mut builder = MandateBuilder::new(decision.agent_did.clone(), operator_id)
+            .per_tx_cap_cents(decision.lim_single.minor_units)
+            .daily_cap_cents(decision.lim_window.minor_units)
+            .valid_from(Utc::now())
+            .valid_until(Utc::now() + Duration::seconds(decision.window_secs as i64));
+
+        for id in counterparty_whitelist {
+            builder = builder.allow_counterparty(id);
+        }
+
+        // An empty action scope would otherwise block every action, since
+        // `allows_action` requires membership.
+        if decision.scope.action_types.is_empty() {
+            builder = builder.allow_action(ActionType::Payment);
+        } else {
+            for action in &decision.scope.action_types {
+                builder = builder.allow_action(action.clone());
+            }
+        }
+
+        builder.build()
+    }
+
     /// Build the mandate and compute its Merkle root.
     /// Caller is responsible for signing with the operator's Dilithium key.
     pub fn build(self) -> ByzResult<SpendMandate> {
         let id = Uuid::new_v4();
         let whitelist_sorted: Vec<&str> = {
-            let mut v: Vec<&str> = self.counterparty_whitelist.iter().map(String::as_str).collect();
+            let mut v: Vec<&str> = self
+                .counterparty_whitelist
+                .iter()
+                .map(String::as_str)
+                .collect();
             v.sort_unstable();
             v
         };

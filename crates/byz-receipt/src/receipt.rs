@@ -3,9 +3,7 @@
 //! Each receipt is signed by the agent's TEE key (non-custodially — the AISA pattern).
 //! The signature is over SHA-256(canonical_json(receipt_fields)).
 
-use byz_common::{
-    ActionType, AgentDid, ByzResult, Counterparty, LiabilityReceipt, ReceiptOutcome,
-};
+use byz_common::{ActionType, AgentDid, ByzResult, Counterparty, LiabilityReceipt, ReceiptOutcome};
 use byz_crypto::{sha256_hex, DilithiumKeypair};
 use chrono::Utc;
 use uuid::Uuid;
@@ -19,6 +17,7 @@ impl ReceiptSigner {
         Self { keypair }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_and_sign(
         &self,
         agent_did: AgentDid,

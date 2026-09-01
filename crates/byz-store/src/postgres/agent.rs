@@ -54,13 +54,12 @@ impl AgentRepository {
     }
 
     pub async fn deactivate(&self, did: &AgentDid) -> ByzResult<()> {
-        let result = sqlx::query(
-            "UPDATE agents SET active = FALSE, updated_at = NOW() WHERE did = $1",
-        )
-        .bind(did.as_str())
-        .execute(&*self.db)
-        .await
-        .map_err(|e| ByzantiumError::Database(e.to_string()))?;
+        let result =
+            sqlx::query("UPDATE agents SET active = FALSE, updated_at = NOW() WHERE did = $1")
+                .bind(did.as_str())
+                .execute(&*self.db)
+                .await
+                .map_err(|e| ByzantiumError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
             return Err(ByzantiumError::AgentNotFound(did.to_string()));

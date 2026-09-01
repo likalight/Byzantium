@@ -37,6 +37,6 @@ bash scripts/run-e2e.sh
 
 - All tests use isolated in-memory state (no shared globals, no external services).
 - Each test creates its own server on a random port (port 0), so tests run safely in parallel.
-- The reputation threshold is set to 400 in most tests (below the default agent score of 500)
+- The reputation gate is disabled (threshold 0) in most tests. A fresh agent scores 0, not a neutral 500: standing for a new agent comes from its KYC-verified principal, not from a free default.
   so freshly-registered agents can PASS without a transaction history.
 - The `e2e_rate_limit_returns_429` test overrides `rate_limit_per_min` to 2 to trigger limiting easily.

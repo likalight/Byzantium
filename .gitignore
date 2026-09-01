@@ -1,6 +1,8 @@
 # Rust
 /target/
-Cargo.lock
+
+# Cargo.lock IS committed: this workspace ships a binary (byz-gateway),
+# and without a lockfile the deployed build is not reproducible.
 
 # Environment
 .env
@@ -45,3 +47,9 @@ Thumbs.db
 PROGRESS_REPORT*.pdf
 PROGRESS_REPORT*.html
 Byzantium_Progress_Report.pdf
+
+# Internal progress reports. These were never committed, and this repository is
+# public — publishing them would be a first-time disclosure, not a move.
+# `generate_report.py` stays tracked; its output does not.
+docs/reports/*.pdf
+docs/reports/*.html

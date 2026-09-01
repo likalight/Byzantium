@@ -142,7 +142,9 @@ impl ReceiptBatcher {
             .sealed
             .iter()
             .find(|(b, _)| b.id == batch_id)
-            .ok_or_else(|| byz_common::ByzantiumError::Internal(format!("batch {batch_id} not found")))?;
+            .ok_or_else(|| {
+                byz_common::ByzantiumError::Internal(format!("batch {batch_id} not found"))
+            })?;
 
         let idx = receipts
             .iter()

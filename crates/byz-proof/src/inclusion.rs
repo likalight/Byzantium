@@ -73,7 +73,7 @@ pub fn bitcoin_merkle_fold(txid_hex: &str, path: &[(String, bool)]) -> String {
 
         // Double SHA-256
         let first = Sha256::digest(&combined);
-        let second = Sha256::digest(&first);
+        let second = Sha256::digest(first);
         current = second.to_vec();
     }
 
@@ -93,11 +93,15 @@ pub fn verify_op_return_in_tx(raw_tx_hex: &str, expected_root_prefix: &[u8]) -> 
         .chain(expected_root_prefix.iter().copied())
         .collect();
 
-    let found = tx_bytes.windows(target.len()).any(|w| w == target.as_slice());
+    let found = tx_bytes
+        .windows(target.len())
+        .any(|w| w == target.as_slice());
     if found {
         Ok(())
     } else {
-        Err(ByzantiumError::Anchor("OP_RETURN not found in transaction".to_string()))
+        Err(ByzantiumError::Anchor(
+            "OP_RETURN not found in transaction".to_string(),
+        ))
     }
 }
 
@@ -109,9 +113,7 @@ fn fold_tx_merkle_path(txid: &[u8], path: &[String]) -> ByzResult<String> {
     let mut current: Vec<u8> = txid.iter().rev().cloned().collect();
 
     for entry in path {
-        let (sibling_hex, side) = entry
-            .split_once(':')
-            .unwrap_or((entry.as_str(), "R"));
+        let (sibling_hex, side) = entry.split_once(':').unwrap_or((entry.as_str(), "R"));
 
         let sib = hex::decode(sibling_hex).map_err(|_| ByzantiumError::MerkleProofInvalid)?;
 
@@ -128,7 +130,7 @@ fn fold_tx_merkle_path(txid: &[u8], path: &[String]) -> ByzResult<String> {
 
         // Double SHA-256 (Bitcoin standard)
         let first = Sha256::digest(&combined);
-        current = Sha256::digest(&first).to_vec();
+        current = Sha256::digest(first).to_vec();
     }
 
     // Re-reverse to standard display order

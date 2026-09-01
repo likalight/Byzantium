@@ -17,9 +17,9 @@ impl MandateRepository {
 
     pub async fn insert(&self, m: &SpendMandate) -> ByzResult<()> {
         let whitelist = serde_json::to_value(&m.counterparty_whitelist)
-            .map_err(|e| ByzantiumError::Serialization(e))?;
-        let action_types = serde_json::to_value(&m.allowed_action_types)
-            .map_err(|e| ByzantiumError::Serialization(e))?;
+            .map_err(ByzantiumError::Serialization)?;
+        let action_types =
+            serde_json::to_value(&m.allowed_action_types).map_err(ByzantiumError::Serialization)?;
 
         sqlx::query(
             r#"
@@ -50,14 +50,12 @@ impl MandateRepository {
     }
 
     pub async fn get(&self, id: Uuid) -> ByzResult<SpendMandate> {
-        let row = sqlx::query(
-            "SELECT * FROM mandates WHERE id = $1 AND revoked_at IS NULL",
-        )
-        .bind(id)
-        .fetch_optional(&*self.db)
-        .await
-        .map_err(|e| ByzantiumError::Database(e.to_string()))?
-        .ok_or_else(|| ByzantiumError::MandateNotFound(id.to_string()))?;
+        let row = sqlx::query("SELECT * FROM mandates WHERE id = $1 AND revoked_at IS NULL")
+            .bind(id)
+            .fetch_optional(&*self.db)
+            .await
+            .map_err(|e| ByzantiumError::Database(e.to_string()))?
+            .ok_or_else(|| ByzantiumError::MandateNotFound(id.to_string()))?;
 
         self.row_to_mandate(row)
     }
@@ -108,11 +106,13 @@ impl MandateRepository {
         let actions_val: serde_json::Value = row
             .try_get("allowed_action_types")
             .map_err(|e| ByzantiumError::Database(e.to_string()))?;
-        let allowed_action_types = serde_json::from_value(actions_val)
-            .map_err(ByzantiumError::Serialization)?;
+        let allowed_action_types =
+            serde_json::from_value(actions_val).map_err(ByzantiumError::Serialization)?;
 
         Ok(SpendMandate {
-            id: row.try_get("id").map_err(|e| ByzantiumError::Database(e.to_string()))?,
+            id: row
+                .try_get("id")
+                .map_err(|e| ByzantiumError::Database(e.to_string()))?,
             agent_did: AgentDid::new(
                 row.try_get::<String, _>("agent_did")
                     .map_err(|e| ByzantiumError::Database(e.to_string()))?,
@@ -124,10 +124,12 @@ impl MandateRepository {
             allowed_action_types,
             per_tx_cap_cents: row
                 .try_get::<i64, _>("per_tx_cap_cents")
-                .map_err(|e| ByzantiumError::Database(e.to_string()))? as u64,
+                .map_err(|e| ByzantiumError::Database(e.to_string()))?
+                as u64,
             daily_cap_cents: row
                 .try_get::<i64, _>("daily_cap_cents")
-                .map_err(|e| ByzantiumError::Database(e.to_string()))? as u64,
+                .map_err(|e| ByzantiumError::Database(e.to_string()))?
+                as u64,
             valid_from: row
                 .try_get::<DateTime<Utc>, _>("valid_from")
                 .map_err(|e| ByzantiumError::Database(e.to_string()))?,

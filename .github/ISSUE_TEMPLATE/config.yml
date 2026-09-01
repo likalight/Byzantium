@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/likalight/Byzantium/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately, not as a public issue.
+  - name: Question or discussion
+    url: https://github.com/likalight/Byzantium/discussions
+    about: Design questions, integration help, and anything open-ended.

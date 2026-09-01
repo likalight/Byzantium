@@ -142,10 +142,16 @@ impl A2AProxy {
         Ok(match verdict_str {
             "PASS" => TrustVerdict::Pass,
             "FLAG" => TrustVerdict::Flag {
-                reason: body["verdict"]["reason"].as_str().unwrap_or("flagged").to_string(),
+                reason: body["verdict"]["reason"]
+                    .as_str()
+                    .unwrap_or("flagged")
+                    .to_string(),
             },
             _ => TrustVerdict::Block {
-                reason: body["verdict"]["reason"].as_str().unwrap_or("blocked").to_string(),
+                reason: body["verdict"]["reason"]
+                    .as_str()
+                    .unwrap_or("blocked")
+                    .to_string(),
             },
         })
     }
@@ -154,9 +160,9 @@ impl A2AProxy {
 /// Simple cross-trust score: 1.0 if both pass, 0.5 if either flags, 0.0 if either blocks.
 fn compute_cross_trust(from: &TrustVerdict, to: &TrustVerdict) -> f64 {
     match (from, to) {
-        (TrustVerdict::Pass, TrustVerdict::Pass)   => 1.0,
-        (TrustVerdict::Pass, TrustVerdict::Flag{..}) |
-        (TrustVerdict::Flag{..}, TrustVerdict::Pass) => 0.5,
+        (TrustVerdict::Pass, TrustVerdict::Pass) => 1.0,
+        (TrustVerdict::Pass, TrustVerdict::Flag { .. })
+        | (TrustVerdict::Flag { .. }, TrustVerdict::Pass) => 0.5,
         _ => 0.0,
     }
 }

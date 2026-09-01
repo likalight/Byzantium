@@ -1,10 +1,16 @@
-use byz_common::config::Config;
-use byz_crypto::DilithiumKeypair;
-use byz_mandate::engine::{MandateEngine, MandateStore};
-use byz_reputation::scorer::ReputationService;
-use byz_receipt::batch::ReceiptBatcher;
-use byz_identity::did::DidResolver;
 use byz_billing::{StripeClient, UsageMeter};
+use byz_common::config::Config;
+use byz_common::{FxTable, PrincipalStanding};
+use byz_crypto::DilithiumKeypair;
+use byz_identity::did::DidResolver;
+use byz_mandate::engine::{MandateEngine, MandateStore};
+use byz_provenance::{RuntimeRegistry, SignedProvenance};
+use byz_receipt::batch::ReceiptBatcher;
+use byz_reputation::scorer::ReputationService;
+use byz_underwrite::{
+    AttestationIssuer, PreviousLimit, RevocationRegistry, Underwriter, UnderwritingConfig,
+};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -37,15 +43,46 @@ pub struct AppState {
     pub cb_base_rpc: CircuitBreaker,
     /// Usage meter for Stripe metered billing
     pub usage_meter: Arc<UsageMeter>,
+
+    // ── Underwriting ─────────────────────────────────────────────────────────
+    /// Turns behavioral history into a limit.
+    pub underwriter: Arc<Underwriter>,
+    /// Signs limit attestations.
+    pub issuer: Arc<AttestationIssuer>,
+    /// KYC standing per agent DID. Underwriting is gated on this.
+    pub standings: Arc<RwLock<HashMap<String, PrincipalStanding>>>,
+    /// Last limit issued per agent, so growth can be rate-capped.
+    pub last_limits: Arc<RwLock<HashMap<String, PreviousLimit>>>,
+    /// FX rates applied at presentation rather than at issuance.
+    pub fx: Arc<FxTable>,
+
+    // ── Provenance ───────────────────────────────────────────────────────────
+    /// Trusted runtime signing keys.
+    pub runtimes: Arc<RwLock<RuntimeRegistry>>,
+    /// Accepted runtime-signed events per agent DID.
+    pub provenance: Arc<RwLock<HashMap<String, Vec<SignedProvenance>>>>,
+    /// Count of events rejected per agent, for the acceptance rate.
+    pub provenance_rejected: Arc<RwLock<HashMap<String, usize>>>,
+    /// Latest evidence commitment per agent.
+    pub evidence_refs: Arc<RwLock<HashMap<String, String>>>,
+    /// Early-kill cutoffs for outstanding attestations. Short TTLs mean the
+    /// normal way to withdraw a limit is to stop reissuing it; this covers the
+    /// compromised-agent case where waiting for expiry is too slow.
+    pub revocations: Arc<RwLock<RevocationRegistry>>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
         let threshold = config.reputation.default_threshold;
         let rate_limit = config.gateway.rate_limit_per_min;
+        let gateway_keypair = DilithiumKeypair::generate();
+        // The issuer signs with the gateway key, so a relying party that already
+        // trusts this gateway's PassTokens can verify attestations with the same
+        // key rather than establishing a second trust root.
+        let issuer = AttestationIssuer::new("did:web:byzantium", gateway_keypair.clone());
         Self {
             config: Arc::new(config),
-            gateway_keypair: Arc::new(DilithiumKeypair::generate()),
+            gateway_keypair: Arc::new(gateway_keypair),
             mandate_engine: Arc::new(RwLock::new(MandateEngine::new(MandateStore::new()))),
             reputation: Arc::new(RwLock::new(ReputationService::new(threshold))),
             batcher: Arc::new(RwLock::new(ReceiptBatcher::new(100))),
@@ -60,6 +97,16 @@ impl AppState {
             cb_solana: CircuitBreaker::new("solana-rpc", 5, 60),
             cb_base_rpc: CircuitBreaker::new("base-rpc", 5, 60),
             usage_meter: Arc::new(UsageMeter::new(StripeClient::from_env())),
+            underwriter: Arc::new(Underwriter::new(UnderwritingConfig::default())),
+            issuer: Arc::new(issuer),
+            standings: Arc::new(RwLock::new(HashMap::new())),
+            last_limits: Arc::new(RwLock::new(HashMap::new())),
+            fx: Arc::new(FxTable::default()),
+            runtimes: Arc::new(RwLock::new(RuntimeRegistry::new())),
+            provenance: Arc::new(RwLock::new(HashMap::new())),
+            provenance_rejected: Arc::new(RwLock::new(HashMap::new())),
+            evidence_refs: Arc::new(RwLock::new(HashMap::new())),
+            revocations: Arc::new(RwLock::new(RevocationRegistry::new())),
         }
     }
 

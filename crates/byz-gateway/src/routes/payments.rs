@@ -41,13 +41,10 @@ pub async fn verify_eip3009(
         ));
     }
 
-    let rpc_url = std::env::var("BASE_RPC_URL")
-        .unwrap_or_else(|_| "https://mainnet.base.org".to_string());
+    let rpc_url =
+        std::env::var("BASE_RPC_URL").unwrap_or_else(|_| "https://mainnet.base.org".to_string());
 
-    let gateway_url = format!(
-        "http://127.0.0.1:{}",
-        state.config.gateway.port
-    );
+    let gateway_url = format!("http://127.0.0.1:{}", state.config.gateway.port);
 
     // Re-use the first configured API key for internal trust-check calls.
     let api_key = state
@@ -74,11 +71,22 @@ pub async fn verify_eip3009(
 
     let (status_str, message) = match &result.status {
         AuthorizationStatus::Valid => ("VALID", "Authorization is valid".to_string()),
-        AuthorizationStatus::InvalidSignature => ("INVALID_SIGNATURE", "Signature does not match `from` address".to_string()),
+        AuthorizationStatus::InvalidSignature => (
+            "INVALID_SIGNATURE",
+            "Signature does not match `from` address".to_string(),
+        ),
         AuthorizationStatus::Expired => ("EXPIRED", "Authorization has expired".to_string()),
-        AuthorizationStatus::NotYetValid => ("NOT_YET_VALID", "Authorization is not yet active".to_string()),
-        AuthorizationStatus::NonceUsed => ("NONCE_USED", "Nonce already consumed on-chain".to_string()),
-        AuthorizationStatus::TrustBlocked => ("TRUST_BLOCKED", "Byzantium trust-check blocked sender".to_string()),
+        AuthorizationStatus::NotYetValid => (
+            "NOT_YET_VALID",
+            "Authorization is not yet active".to_string(),
+        ),
+        AuthorizationStatus::NonceUsed => {
+            ("NONCE_USED", "Nonce already consumed on-chain".to_string())
+        }
+        AuthorizationStatus::TrustBlocked => (
+            "TRUST_BLOCKED",
+            "Byzantium trust-check blocked sender".to_string(),
+        ),
     };
 
     let valid = result.status == AuthorizationStatus::Valid;
@@ -119,15 +127,21 @@ pub async fn verify_solana(
     }
 
     let byzantium_url = format!("http://127.0.0.1:{}", state.config.gateway.port);
-    let api_key = state.config.gateway.api_keys.first().cloned().unwrap_or_default();
+    let api_key = state
+        .config
+        .gateway
+        .api_keys
+        .first()
+        .cloned()
+        .unwrap_or_default();
     let verifier = SolanaVerifier::for_cluster(&req.cluster, &byzantium_url);
-    let result = verifier
-        .verify(&req, &api_key)
-        .await
-        .map_err(|e| {
-            state.cb_solana.record_failure();
-            (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))
-        })?;
+    let result = verifier.verify(&req, &api_key).await.map_err(|e| {
+        state.cb_solana.record_failure();
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
     state.cb_solana.record_success();
     let valid = result.status == TransferStatus::Verified;
     Ok(Json(json!({

@@ -7,8 +7,7 @@ use byz_crypto::merkle::MerkleProof;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "sp1")]
-const DISCLOSURE_ELF: &[u8] =
-    include_bytes!("../../../programs/elf/disclosure-proof");
+const DISCLOSURE_ELF: &[u8] = include_bytes!("../../../programs/elf/disclosure-proof");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CredentialDisclosureRequest {
@@ -40,7 +39,7 @@ impl CredentialDisclosureProof {
         chrono::Utc::now() > self.valid_until
     }
 
-    pub fn generate(req: &CredentialDisclosureRequest) -> byz_common::ByzResult<Self> {
+    pub fn generate(_req: &CredentialDisclosureRequest) -> byz_common::ByzResult<Self> {
         #[cfg(feature = "sp1")]
         {
             Ok(Self::generate_sp1(req))

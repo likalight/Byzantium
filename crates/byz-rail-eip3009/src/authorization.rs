@@ -61,10 +61,7 @@ impl TransferAuthorization {
         h.update(self.value.to_be_bytes());
         h.update(self.valid_after.to_be_bytes());
         h.update(self.valid_before.to_be_bytes());
-        h.update(
-            hex::decode(self.nonce.trim_start_matches("0x"))
-                .unwrap_or_default(),
-        );
+        h.update(hex::decode(self.nonce.trim_start_matches("0x")).unwrap_or_default());
         h.finalize().to_vec()
     }
 
@@ -73,7 +70,10 @@ impl TransferAuthorization {
         let sig_bytes = hex::decode(self.signature.trim_start_matches("0x"))
             .map_err(|e| format!("invalid sig hex: {e}"))?;
         if sig_bytes.len() != 65 {
-            return Err(format!("signature must be 65 bytes, got {}", sig_bytes.len()));
+            return Err(format!(
+                "signature must be 65 bytes, got {}",
+                sig_bytes.len()
+            ));
         }
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];

@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 /// Build a minimal in-memory `Config` with the given API key.
 ///
-/// The reputation threshold is set to 400 (below the new-agent default of 500)
+/// The reputation threshold is set to 0, which disables the reputation gate.
 /// so that a freshly registered agent can pass the trust check without needing
 /// a history of successful transactions.
 fn test_config(api_key: &str) -> Config {
@@ -58,8 +58,12 @@ fn test_config(api_key: &str) -> Config {
             database: "unused".to_string(),
         },
         reputation: ReputationConfig {
-            // Set below the new-agent neutral score (500) so fresh agents PASS.
-            default_threshold: 400,
+            // These tests exercise mandate enforcement, not the scoring model.
+            // A fresh agent now scores 0 rather than a neutral 500 — a nonzero
+            // score for an agent with no history was a free limit for anyone who
+            // could generate a keypair — so the reputation gate is disabled here
+            // instead of being cleared by a default that no longer exists.
+            default_threshold: 0,
             score_refresh_interval_secs: 3600,
         },
         zkme: ZkMeConfig {
@@ -71,7 +75,7 @@ fn test_config(api_key: &str) -> Config {
 
 /// Spin up a gateway on a random port and return (base_url, api_key).
 ///
-/// Uses a low reputation threshold (400) so freshly-registered agents can PASS.
+/// The reputation gate is disabled (threshold 0) so freshly-registered agents can PASS.
 async fn start_test_server() -> (String, String) {
     let api_key = format!("e2e-key-{}", Uuid::new_v4());
     let config = test_config(&api_key);
@@ -100,7 +104,7 @@ fn client() -> Client {
 /// Full happy path — register agent → create mandate → trust check → PASS.
 ///
 /// This is the golden path exercised in every investor demo.
-/// Uses a reputation threshold of 400 so the agent's neutral score of 500 clears it.
+/// The reputation gate is disabled, so this asserts mandate behavior only.
 #[tokio::test]
 async fn e2e_happy_path() {
     let (base_url, api_key) = start_test_server().await;
@@ -195,10 +199,13 @@ async fn e2e_happy_path() {
         "PASS verdict must include a PassToken; got: {check_body}"
     );
 
-    // Assert: latency_ms > 0
-    let latency_ms = check_body["latency_ms"].as_u64().unwrap_or(0);
-    assert!(latency_ms > 0 || latency_ms == 0, "latency_ms field must be present");
-    // latency_ms == 0 is acceptable in a fast in-memory test; just assert the field exists
+    // `latency_ms` is a u64, so a `>= 0` check asserts nothing. In a fast
+    // in-memory test the value is legitimately 0, so assert the field is present
+    // and well-typed instead.
+    assert!(
+        check_body["latency_ms"].as_u64().is_some(),
+        "latency_ms must be present and numeric; got: {check_body}"
+    );
     assert!(
         check_body["latency_ms"].is_number(),
         "latency_ms must be a number; got: {check_body}"
@@ -214,7 +221,10 @@ async fn e2e_happy_path() {
     assert_eq!(health_res.status(), 200);
 
     let health_body: Value = health_res.json().await.expect("health json");
-    assert_eq!(health_body["status"], "ok", "health must be ok; got: {health_body}");
+    assert_eq!(
+        health_body["status"], "ok",
+        "health must be ok; got: {health_body}"
+    );
 }
 
 /// No mandate → trust check must return BLOCK.
@@ -315,7 +325,10 @@ async fn e2e_health_check() {
     assert_eq!(res.status(), 200, "health must return 200");
 
     let body: Value = res.json().await.expect("health json");
-    assert_eq!(body["status"], "ok", "status field must be 'ok'; got: {body}");
+    assert_eq!(
+        body["status"], "ok",
+        "status field must be 'ok'; got: {body}"
+    );
     assert_eq!(
         body["service"], "byzantium-gateway",
         "service field must identify the gateway; got: {body}"
@@ -338,11 +351,7 @@ async fn e2e_unauthenticated_returns_401() {
         .await
         .expect("request");
 
-    assert_eq!(
-        res.status(),
-        401,
-        "unauthenticated request must return 401"
-    );
+    assert_eq!(res.status(), 401, "unauthenticated request must return 401");
 }
 
 /// Client-supplied X-Request-Id must be echoed back in the response headers.
@@ -402,7 +411,10 @@ async fn e2e_full_audit_trail() {
 
     assert_eq!(mandate_res.status(), 200);
     let mandate_body: Value = mandate_res.json().await.expect("mandate json");
-    let mandate_id = mandate_body["mandate_id"].as_str().expect("mandate_id").to_string();
+    let mandate_id = mandate_body["mandate_id"]
+        .as_str()
+        .expect("mandate_id")
+        .to_string();
 
     // Create a receipt
     let receipt_res = client()
@@ -425,7 +437,10 @@ async fn e2e_full_audit_trail() {
 
     let receipt_body: Value = receipt_res.json().await.expect("receipt json");
     assert!(
-        receipt_body["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).is_some(),
+        receipt_body["id"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .is_some(),
         "receipt id must be a valid UUID; got: {receipt_body}"
     );
 
@@ -446,7 +461,9 @@ async fn e2e_full_audit_trail() {
         "audit endpoint must return at least 1 receipt after creating one; got total={total}, body={audit_body}"
     );
 
-    let receipts = audit_body["receipts"].as_array().expect("receipts must be an array");
+    let receipts = audit_body["receipts"]
+        .as_array()
+        .expect("receipts must be an array");
     assert!(
         !receipts.is_empty(),
         "receipts array must not be empty; got: {audit_body}"
@@ -481,7 +498,10 @@ async fn e2e_revoked_mandate_blocks() {
 
     assert_eq!(mandate_res.status(), 200);
     let mandate_body: Value = mandate_res.json().await.expect("mandate json");
-    let mandate_id = mandate_body["mandate_id"].as_str().expect("mandate_id").to_string();
+    let mandate_id = mandate_body["mandate_id"]
+        .as_str()
+        .expect("mandate_id")
+        .to_string();
 
     // Revoke the mandate
     let revoke_res = client()
@@ -491,7 +511,12 @@ async fn e2e_revoked_mandate_blocks() {
         .await
         .expect("revoke request");
 
-    assert_eq!(revoke_res.status(), 200, "revoke must succeed; got: {}", revoke_res.status());
+    assert_eq!(
+        revoke_res.status(),
+        200,
+        "revoke must succeed; got: {}",
+        revoke_res.status()
+    );
 
     // Trust check after revocation → expect BLOCK
     let check_res = client()

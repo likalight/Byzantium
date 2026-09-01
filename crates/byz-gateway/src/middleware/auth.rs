@@ -2,10 +2,14 @@
 //!
 //! Rails authenticate with a pre-shared API key via `Authorization: Bearer <key>`.
 //! Keys are checked in two layers:
-//!   1. Database: SHA-256 hash the Bearer token, look up in api_keys table (when store is available).
-//!   2. Env-var fallback: comma-separated BYZ_API_KEYS env var (dev mode).
+//!
+//! 1. Database: SHA-256 hash the Bearer token, look up in the api_keys table
+//!    (when a store is available).
+//! 2. Env-var fallback: comma-separated `BYZ_API_KEYS` (dev mode).
+//!
 //! Production upgrade path: mTLS + short-lived Dilithium-signed JWTs.
 
+use crate::state::AppState;
 use axum::{
     extract::{Request, State},
     http::{HeaderMap, StatusCode},
@@ -15,7 +19,6 @@ use axum::{
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use crate::state::AppState;
 
 pub async fn require_api_key(
     State(state): State<AppState>,
@@ -51,7 +54,9 @@ pub async fn require_api_key(
     // ── Layer 2: env-var key check (dev mode / fallback) ─────────────────────
     if state.config.gateway.api_keys.is_empty() && state.store.is_none() {
         // Development mode: if no keys configured at all, allow all traffic with warning.
-        tracing::warn!("BYZ_API_KEYS not set — auth disabled. Set it before accepting real rail traffic.");
+        tracing::warn!(
+            "BYZ_API_KEYS not set — auth disabled. Set it before accepting real rail traffic."
+        );
         request.extensions_mut().insert("default".to_string());
         return Ok(next.run(request).await);
     }
@@ -63,7 +68,13 @@ pub async fn require_api_key(
 
     // Also accept SHA-256 prefixed env-var keys (for env-stored hashed keys)
     let provided_hash = sha256_hex(provided.as_bytes());
-    if state.config.gateway.api_keys.iter().any(|k| k == &provided_hash) {
+    if state
+        .config
+        .gateway
+        .api_keys
+        .iter()
+        .any(|k| k == &provided_hash)
+    {
         request.extensions_mut().insert("default".to_string());
         return Ok(next.run(request).await);
     }

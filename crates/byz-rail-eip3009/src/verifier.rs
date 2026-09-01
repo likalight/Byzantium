@@ -87,7 +87,9 @@ impl Eip3009Verifier {
 
         // 4. Byzantium trust-check on sender
         let agent_did = format!("did:evm:base:{}", auth.from.to_lowercase());
-        let trust_ok = self.byzantium_trust_check(&agent_did, auth.value, api_key).await?;
+        let trust_ok = self
+            .byzantium_trust_check(&agent_did, auth.value, api_key)
+            .await?;
         if !trust_ok {
             return Ok(VerificationResult {
                 status: AuthorizationStatus::TrustBlocked,
@@ -151,7 +153,10 @@ impl Eip3009Verifier {
     async fn check_nonce_used(&self, auth: &TransferAuthorization) -> Result<bool, Eip3009Error> {
         // authorizationState(address,bytes32) selector = keccak256("authorizationState(address,bytes32)")[..4]
         // = 0xe94a0102
-        let from_padded = format!("000000000000000000000000{}", auth.from.trim_start_matches("0x").to_lowercase());
+        let from_padded = format!(
+            "000000000000000000000000{}",
+            auth.from.trim_start_matches("0x").to_lowercase()
+        );
         let nonce_padded = auth.nonce.trim_start_matches("0x").to_lowercase();
         let nonce_padded = format!("{:0>64}", nonce_padded);
         let data = format!("0xe94a0102{}{}", from_padded, nonce_padded);
@@ -183,7 +188,7 @@ impl Eip3009Verifier {
 
         let result_hex = resp["result"].as_str().unwrap_or("0x0");
         // Returns bool as 0x00...00 (false=fresh) or 0x00...01 (true=used)
-        let used = result_hex.trim_start_matches("0x").chars().last() == Some('1');
+        let used = result_hex.trim_start_matches("0x").ends_with('1');
         Ok(used)
     }
 
@@ -219,19 +224,19 @@ impl Eip3009Verifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use crate::authorization::TransferAuthorization;
 
     fn make_auth() -> TransferAuthorization {
         TransferAuthorization {
-            token:        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".to_string(), // USDC Base
-            from:         "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
-            to:           "0x1234567890abcdef1234567890abcdef12345678".to_string(),
-            value:        1_000_000,   // 1 USDC (6 decimals)
-            valid_after:  0,
+            token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".to_string(), // USDC Base
+            from: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045".to_string(),
+            to: "0x1234567890abcdef1234567890abcdef12345678".to_string(),
+            value: 1_000_000, // 1 USDC (6 decimals)
+            valid_after: 0,
             valid_before: u64::MAX,
-            nonce:        "0x0000000000000000000000000000000000000000000000000000000000000001".to_string(),
-            signature:    "0x".to_string() + &"aa".repeat(32) + &"bb".repeat(32) + "1c",
+            nonce: "0x0000000000000000000000000000000000000000000000000000000000000001".to_string(),
+            signature: "0x".to_string() + &"aa".repeat(32) + &"bb".repeat(32) + "1c",
         }
     }
 

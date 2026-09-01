@@ -1,3 +1,4 @@
+use crate::state::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -8,7 +9,6 @@ use byz_mandate::policy::MandateBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
-use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMandateRequest {
@@ -45,7 +45,10 @@ pub async fn create_mandate(
     }
 
     let mandate = builder.build().map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() })))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": e.to_string() })),
+        )
     })?;
 
     let resp = CreateMandateResponse {
@@ -57,10 +60,18 @@ pub async fn create_mandate(
     // Write to persistent store if available, then update in-memory engine.
     if let Some(store) = &state.store {
         store.mandates.insert(&mandate).await.map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
     }
-    state.mandate_engine.write().await.store_mut().insert(mandate);
+    state
+        .mandate_engine
+        .write()
+        .await
+        .store_mut()
+        .insert(mandate);
 
     tracing::info!(mandate_id = %resp.mandate_id, agent_did = %resp.agent_did, "mandate created");
     Ok(Json(resp))
@@ -73,13 +84,19 @@ pub async fn get_mandate(
     // Prefer persistent store; fall back to in-memory.
     if let Some(store) = &state.store {
         let mandate = store.mandates.get(id).await.map_err(|e| {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
         return Ok(Json(mandate));
     }
     let engine = state.mandate_engine.read().await;
     let mandate = engine.store().get(id).map_err(|e| {
-        (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": e.to_string() })),
+        )
     })?;
     Ok(Json(mandate.clone()))
 }
@@ -90,9 +107,18 @@ pub async fn revoke_mandate(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     if let Some(store) = &state.store {
         store.mandates.revoke(id).await.map_err(|e| {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
     }
-    state.mandate_engine.write().await.store_mut().revoke(id).ok();
+    state
+        .mandate_engine
+        .write()
+        .await
+        .store_mut()
+        .revoke(id)
+        .ok();
     Ok(Json(json!({ "revoked": id })))
 }

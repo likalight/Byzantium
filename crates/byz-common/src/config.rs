@@ -47,20 +47,28 @@ impl Default for GatewayConfig {
         Self {
             host: std::env::var("GATEWAY_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: std::env::var("GATEWAY_PORT")
-                .ok().and_then(|p| p.parse().ok()).unwrap_or(8080),
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(8080),
             trust_check_timeout_ms: 180,
             api_keys,
             rate_limit_per_min: std::env::var("RATE_LIMIT_PER_MIN")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(600),
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(600),
             proof_refresh_secs: std::env::var("PROOF_REFRESH_SECS")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(60),
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60),
             cors_origins: std::env::var("BYZ_CORS_ORIGINS")
                 .unwrap_or_else(|_| "http://localhost:3000".to_string())
                 .split(',')
                 .filter(|s| !s.is_empty())
                 .map(|s| s.trim().to_string())
                 .collect(),
-            metrics_token: std::env::var("BYZ_METRICS_TOKEN").ok().filter(|s| !s.is_empty()),
+            metrics_token: std::env::var("BYZ_METRICS_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
         }
     }
 }
@@ -74,8 +82,9 @@ pub struct DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://byzantium:byzantium@localhost:5432/byzantium".to_string()),
+            url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://byzantium:byzantium@localhost:5432/byzantium".to_string()
+            }),
             max_connections: 10,
         }
     }
@@ -107,8 +116,7 @@ pub struct Neo4jConfig {
 impl Default for Neo4jConfig {
     fn default() -> Self {
         Self {
-            uri: std::env::var("NEO4J_URI")
-                .unwrap_or_else(|_| "bolt://localhost:7687".to_string()),
+            uri: std::env::var("NEO4J_URI").unwrap_or_else(|_| "bolt://localhost:7687".to_string()),
             username: std::env::var("NEO4J_USERNAME").unwrap_or_else(|_| "neo4j".to_string()),
             password: std::env::var("NEO4J_PASSWORD").unwrap_or_else(|_| "byzantium".to_string()),
         }
@@ -131,8 +139,7 @@ impl Default for ImmudbConfig {
             port: 3322,
             username: std::env::var("IMMUDB_USERNAME").unwrap_or_else(|_| "immudb".to_string()),
             password: std::env::var("IMMUDB_PASSWORD").unwrap_or_else(|_| "immudb".to_string()),
-            database: std::env::var("IMMUDB_DATABASE")
-                .unwrap_or_else(|_| "byzantium".to_string()),
+            database: std::env::var("IMMUDB_DATABASE").unwrap_or_else(|_| "byzantium".to_string()),
         }
     }
 }

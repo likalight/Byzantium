@@ -56,7 +56,9 @@ impl BitcoinAnchor {
         let root_bytes = hex::decode(merkle_root)
             .map_err(|_| ByzantiumError::Anchor("invalid root hex".to_string()))?;
         if root_bytes.len() < 32 {
-            return Err(ByzantiumError::Anchor("root too short for OP_RETURN".to_string()));
+            return Err(ByzantiumError::Anchor(
+                "root too short for OP_RETURN".to_string(),
+            ));
         }
 
         // Build OP_RETURN script: OP_RETURN <32 bytes of root>
@@ -67,15 +69,20 @@ impl BitcoinAnchor {
 
         // Step 1: createrawtransaction with OP_RETURN output (0 BTC value)
         let raw_tx = self
-            .rpc("createrawtransaction", serde_json::json!([
-                [],
-                [{ "data": op_return_hex }]
-            ]))
+            .rpc(
+                "createrawtransaction",
+                serde_json::json!([
+                    [],
+                    [{ "data": op_return_hex }]
+                ]),
+            )
             .await?;
 
         let raw_tx_hex = raw_tx["result"]
             .as_str()
-            .ok_or_else(|| ByzantiumError::Anchor("createrawtransaction returned no hex".to_string()))?
+            .ok_or_else(|| {
+                ByzantiumError::Anchor("createrawtransaction returned no hex".to_string())
+            })?
             .to_string();
 
         // Step 2: fundrawtransaction — adds inputs + change output
@@ -85,12 +92,17 @@ impl BitcoinAnchor {
 
         let funded_hex = funded["result"]["hex"]
             .as_str()
-            .ok_or_else(|| ByzantiumError::Anchor("fundrawtransaction returned no hex".to_string()))?
+            .ok_or_else(|| {
+                ByzantiumError::Anchor("fundrawtransaction returned no hex".to_string())
+            })?
             .to_string();
 
         // Step 3: signrawtransactionwithwallet
         let signed = self
-            .rpc("signrawtransactionwithwallet", serde_json::json!([funded_hex]))
+            .rpc(
+                "signrawtransactionwithwallet",
+                serde_json::json!([funded_hex]),
+            )
             .await?;
 
         let signed_hex = signed["result"]["hex"]
@@ -100,7 +112,9 @@ impl BitcoinAnchor {
 
         let complete = signed["result"]["complete"].as_bool().unwrap_or(false);
         if !complete {
-            return Err(ByzantiumError::Anchor("signing incomplete — check wallet".to_string()));
+            return Err(ByzantiumError::Anchor(
+                "signing incomplete — check wallet".to_string(),
+            ));
         }
 
         // Step 4: sendrawtransaction
@@ -110,7 +124,9 @@ impl BitcoinAnchor {
 
         let txid = broadcast["result"]
             .as_str()
-            .ok_or_else(|| ByzantiumError::Anchor("sendrawtransaction returned no txid".to_string()))?
+            .ok_or_else(|| {
+                ByzantiumError::Anchor("sendrawtransaction returned no txid".to_string())
+            })?
             .to_string();
 
         tracing::info!(txid = %txid, root_prefix = &merkle_root[..16], "Bitcoin OP_RETURN anchored");

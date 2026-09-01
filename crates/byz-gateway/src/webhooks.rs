@@ -70,8 +70,7 @@ impl WebhookDispatcher {
 
         // HMAC-SHA256 signature over the raw JSON body
         let signature = {
-            let mut mac = HmacSha256::new_from_slice(cfg.secret.as_bytes())
-                .expect("HMAC key init");
+            let mut mac = HmacSha256::new_from_slice(cfg.secret.as_bytes()).expect("HMAC key init");
             mac.update(body.as_bytes());
             let result = mac.finalize();
             format!("sha256={}", hex::encode(result.into_bytes()))

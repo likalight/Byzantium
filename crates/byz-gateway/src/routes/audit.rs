@@ -30,7 +30,9 @@ pub struct AuditQuery {
     pub cursor: Option<String>,
 }
 
-fn default_limit() -> usize { 100 }
+fn default_limit() -> usize {
+    100
+}
 
 #[derive(Debug, Serialize)]
 pub struct AuditReceiptEntry {
@@ -70,13 +72,24 @@ pub async fn list_receipts(
     let cursor_uuid: Option<Uuid> = match &q.cursor {
         None => None,
         Some(encoded) => {
-            let bytes = B64
-                .decode(encoded)
-                .map_err(|_| (StatusCode::BAD_REQUEST, Json(json!({ "error": "invalid cursor" }))))?;
-            let s = String::from_utf8(bytes)
-                .map_err(|_| (StatusCode::BAD_REQUEST, Json(json!({ "error": "invalid cursor" }))))?;
-            let id = Uuid::parse_str(&s)
-                .map_err(|_| (StatusCode::BAD_REQUEST, Json(json!({ "error": "invalid cursor" }))))?;
+            let bytes = B64.decode(encoded).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "invalid cursor" })),
+                )
+            })?;
+            let s = String::from_utf8(bytes).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "invalid cursor" })),
+                )
+            })?;
+            let id = Uuid::parse_str(&s).map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "invalid cursor" })),
+                )
+            })?;
             Some(id)
         }
     };
@@ -93,7 +106,12 @@ pub async fn list_receipts(
                 cursor_uuid,
             )
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))?;
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            })?;
 
         let entries: Vec<AuditReceiptEntry> = rows
             .into_iter()
@@ -133,16 +151,24 @@ pub async fn list_receipts(
     for (batch, receipts) in batcher.sealed_batches() {
         for receipt in receipts {
             if let Some(ref did) = q.agent_did {
-                if receipt.agent_did.as_str() != did.as_str() { continue; }
+                if receipt.agent_did.as_str() != did.as_str() {
+                    continue;
+                }
             }
             if let Some(from) = q.from {
-                if receipt.timestamp < from { continue; }
+                if receipt.timestamp < from {
+                    continue;
+                }
             }
             if let Some(to) = q.to {
-                if receipt.timestamp > to { continue; }
+                if receipt.timestamp > to {
+                    continue;
+                }
             }
             if let Some(bid) = q.batch_id {
-                if bid != batch.id { continue; }
+                if bid != batch.id {
+                    continue;
+                }
             }
 
             let proof = batcher
@@ -164,15 +190,21 @@ pub async fn list_receipts(
                 inclusion_proof: proof,
             });
 
-            if entries.len() >= limit { break; }
+            if entries.len() >= limit {
+                break;
+            }
         }
-        if entries.len() >= limit { break; }
+        if entries.len() >= limit {
+            break;
+        }
     }
 
     // Also include receipts from the current (unsealed) batch
     for receipt in batcher.pending_receipts() {
         if let Some(ref did) = q.agent_did {
-            if receipt.agent_did.as_str() != did.as_str() { continue; }
+            if receipt.agent_did.as_str() != did.as_str() {
+                continue;
+            }
         }
         entries.push(AuditReceiptEntry {
             receipt_id: receipt.id,
@@ -187,7 +219,9 @@ pub async fn list_receipts(
             batch_merkle_root: None,
             inclusion_proof: None,
         });
-        if entries.len() >= limit { break; }
+        if entries.len() >= limit {
+            break;
+        }
     }
 
     let total = entries.len();
@@ -203,9 +237,12 @@ pub async fn get_batch_proof(
     axum::extract::Path(batch_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let batcher = state.batcher.read().await;
-    let batch = batcher
-        .get_batch(batch_id)
-        .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({ "error": "batch not found" }))))?;
+    let batch = batcher.get_batch(batch_id).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "batch not found" })),
+        )
+    })?;
 
     Ok(Json(json!({
         "batch_id": batch_id,

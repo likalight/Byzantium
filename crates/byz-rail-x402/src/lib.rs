@@ -10,10 +10,12 @@
 //! Reference: https://x402.org
 
 pub mod error;
+pub mod limits;
 pub mod payment;
 pub mod verifier;
 
-use byz_common::{ActionType, AgentDid, TrustVerdict};
+use base64::Engine as _;
+use byz_common::{AgentDid, TrustVerdict};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -59,9 +61,9 @@ impl PaymentRequired {
     }
 
     pub fn to_header_value(&self) -> Result<String, X402Error> {
-        let json = serde_json::to_string(self)
-            .map_err(|e| X402Error::Serialization(e.to_string()))?;
-        Ok(base64::encode(json))
+        let json =
+            serde_json::to_string(self).map_err(|e| X402Error::Serialization(e.to_string()))?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(json))
     }
 
     pub fn is_expired(&self) -> bool {

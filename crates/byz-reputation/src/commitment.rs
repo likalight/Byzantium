@@ -151,7 +151,10 @@ mod tests {
         assert!(ThresholdProof::generate_stub(&req).is_some());
 
         // Cannot prove below threshold
-        let req_fail = ThresholdProofRequest { score_private: 500, ..req };
+        let req_fail = ThresholdProofRequest {
+            score_private: 500,
+            ..req
+        };
         assert!(ThresholdProof::generate_stub(&req_fail).is_none());
     }
 }

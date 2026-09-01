@@ -3,7 +3,11 @@ use axum::extract::DefaultBodyLimit;
 use axum::http::HeaderValue;
 use byz_common::config::Config;
 use opentelemetry_otlp::WithExportConfig as _;
-use tower_http::{cors::{AllowOrigin, CorsLayer}, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    timeout::TimeoutLayer,
+    trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use byz_gateway::jobs;
@@ -25,17 +29,15 @@ fn init_telemetry(service_name: &str) -> Option<opentelemetry_sdk::trace::Tracer
                 .tonic()
                 .with_endpoint(&endpoint),
         )
-        .with_trace_config(
-            opentelemetry_sdk::trace::Config::default().with_resource(
-                opentelemetry_sdk::Resource::new(vec![
-                    opentelemetry::KeyValue::new("service.name", service_name.to_string()),
-                    opentelemetry::KeyValue::new(
-                        "service.version",
-                        env!("CARGO_PKG_VERSION").to_string(),
-                    ),
-                ]),
-            ),
-        )
+        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+            opentelemetry_sdk::Resource::new(vec![
+                opentelemetry::KeyValue::new("service.name", service_name.to_string()),
+                opentelemetry::KeyValue::new(
+                    "service.version",
+                    env!("CARGO_PKG_VERSION").to_string(),
+                ),
+            ]),
+        ))
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .ok()?;
 
@@ -47,14 +49,13 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     // Build the base subscriber (env-filter + JSON formatting).
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| "byzantium=info".into());
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "byzantium=info".into());
 
     let fmt_layer = tracing_subscriber::fmt::layer().json();
 
     // Attempt to wire up OTel; it is purely opt-in via the env var.
-    let otel_layer = init_telemetry("byzantium-gateway")
-        .map(tracing_opentelemetry::OpenTelemetryLayer::new);
+    let otel_layer =
+        init_telemetry("byzantium-gateway").map(tracing_opentelemetry::OpenTelemetryLayer::new);
 
     // `tracing_subscriber` requires both branches to have the same concrete
     // type, which we achieve with `Option`'s `Layer` impl through
@@ -112,7 +113,9 @@ async fn main() -> Result<()> {
     // Spawn background jobs
     jobs::proof_refresh::spawn(state.clone());
     jobs::anchor_flush::spawn(state.clone());
-    tokio::spawn(jobs::billing_flush::run_billing_flush(state.usage_meter.clone()));
+    tokio::spawn(jobs::billing_flush::run_billing_flush(
+        state.usage_meter.clone(),
+    ));
 
     if config.gateway.api_keys.is_empty() {
         tracing::warn!(
@@ -120,13 +123,19 @@ async fn main() -> Result<()> {
              Set BYZ_API_KEYS=key1,key2 before accepting production traffic."
         );
     } else {
-        tracing::info!(key_count = config.gateway.api_keys.len(), "API key auth enabled");
+        tracing::info!(
+            key_count = config.gateway.api_keys.len(),
+            "API key auth enabled"
+        );
     }
 
     let cors = if state.config.gateway.cors_origins.iter().any(|o| o == "*") {
         CorsLayer::permissive()
     } else {
-        let origins: Vec<HeaderValue> = state.config.gateway.cors_origins
+        let origins: Vec<HeaderValue> = state
+            .config
+            .gateway
+            .cors_origins
             .iter()
             .filter_map(|o| o.parse().ok())
             .collect();
@@ -136,23 +145,24 @@ async fn main() -> Result<()> {
     let shutdown_state = state.clone();
     let app = routes::router(state)
         .layer(TraceLayer::new_for_http())
-        .layer(DefaultBodyLimit::max(1 * 1024 * 1024)) // 1MB request body limit
+        .layer(DefaultBodyLimit::max(1024 * 1024)) // 1MB request body limit
         .layer(cors)
-        .layer(TimeoutLayer::new(std::time::Duration::from_millis(timeout_ms + 50)));
+        .layer(TimeoutLayer::new(std::time::Duration::from_millis(
+            timeout_ms + 50,
+        )));
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(addr = %addr, "Byzantium gateway started");
 
     // Graceful shutdown on SIGTERM or SIGINT
-    let serve = axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            tracing::info!("shutdown signal received — flushing receipt batches");
-            flush_batches_on_shutdown(&shutdown_state).await;
-            // Flush the OTel pipeline before process exit so no spans are lost.
-            opentelemetry::global::shutdown_tracer_provider();
-            tracing::info!("shutdown complete");
-        });
+    let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        tracing::info!("shutdown signal received — flushing receipt batches");
+        flush_batches_on_shutdown(&shutdown_state).await;
+        // Flush the OTel pipeline before process exit so no spans are lost.
+        opentelemetry::global::shutdown_tracer_provider();
+        tracing::info!("shutdown complete");
+    });
     serve.await?;
     Ok(())
 }
@@ -195,7 +205,10 @@ async fn flush_batches_on_shutdown(state: &AppState) {
         return;
     }
 
-    tracing::info!(count = pending.len(), "flushing sealed batches to PostgreSQL");
+    tracing::info!(
+        count = pending.len(),
+        "flushing sealed batches to PostgreSQL"
+    );
     for batch in &pending {
         if let Err(e) = store.batches.insert(batch).await {
             tracing::error!(

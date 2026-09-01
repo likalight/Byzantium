@@ -7,6 +7,18 @@ import type {
   TrustCheckRequest,
   TrustCheckResponse,
 } from "./types.js";
+import type {
+  IssueLimitRequest,
+  IssueLimitResponse,
+  PrincipalRegistration,
+  RegisterPrincipalRequest,
+  RevokeLimitsRequest,
+  SettleDrawRequest,
+  SubmitProvenanceResponse,
+  VerifyLimitRequest,
+  VerifyLimitResponse,
+} from "./types.js";
+import type { SignedProvenance } from "./provenance.js";
 
 export interface ByzantiumClientConfig {
   /** Byzantium gateway base URL, e.g. "https://gateway.byzantium.ai" */
@@ -124,6 +136,80 @@ export class ByzantiumClient {
   }
 
   // ── Health ────────────────────────────────────────────────────────────────
+
+  // -- Underwriting ----------------------------------------------------------
+
+  /**
+   * Bind an agent to a KYC'd principal. Nothing can be underwritten before this:
+   * standing is the gate, and the principal is where limits consolidate, so
+   * registering more agents divides a ceiling rather than multiplying it.
+   */
+  async registerPrincipal(req: RegisterPrincipalRequest): Promise<PrincipalRegistration> {
+    return this.post("/v1/principals", req);
+  }
+
+  /**
+   * Underwrite the agent and return a portable, signed limit.
+   *
+   * `reasons` explains every control that shaped the number, including on a
+   * refusal, which is why a low limit is answerable rather than mysterious.
+   */
+  async issueLimit(req: IssueLimitRequest): Promise<IssueLimitResponse> {
+    return this.post("/v1/limits/issue", req);
+  }
+
+  /**
+   * Present an attestation for one draw. The chain it is presented on need never
+   * have seen this agent: the gateway checks a signature, converts into the unit
+   * of account, applies the asset-class haircut, and nets against exposure.
+   */
+  async verifyLimit(req: VerifyLimitRequest): Promise<VerifyLimitResponse> {
+    return this.post("/v1/limits/verify", req);
+  }
+
+  /**
+   * Resolve a committed draw. Settling consumes window capacity; failing
+   * releases the exposure. Either way the outcome reaches the scorer, which is
+   * what closes the feedback loop.
+   */
+  async settleDraw(req: SettleDrawRequest): Promise<unknown> {
+    return this.post("/v1/limits/settle", req);
+  }
+
+  /**
+   * Kill the outstanding attestations for an agent or a whole principal. A
+   * future `effective_from` schedules the cutoff instead of invalidating
+   * credentials that are in flight right now.
+   */
+  async revokeLimits(req: RevokeLimitsRequest): Promise<unknown> {
+    return this.post("/v1/limits/revoke", req);
+  }
+
+  // -- Provenance ------------------------------------------------------------
+
+  /**
+   * Submit runtime-signed execution traces. Build them with `ProvenanceRecorder`.
+   *
+   * Events that fail verification are reported in `rejections` rather than
+   * silently dropped: a low `acceptance_rate_bps` almost always means a
+   * misconfigured runtime rather than a misbehaving agent.
+   */
+  async submitProvenance(
+    agentDid: string,
+    events: SignedProvenance[],
+  ): Promise<SubmitProvenanceResponse> {
+    return this.post("/v1/provenance", { agent_did: agentDid, events });
+  }
+
+  /** Current evidence commitment and summary for an agent. */
+  async getProvenance(agentDid: string): Promise<unknown> {
+    return this.get(`/v1/provenance/${encodeURIComponent(agentDid)}`);
+  }
+
+  /** Register a trusted runtime signing key. The trust root for provenance. */
+  async registerRuntime(runtimeId: string, publicKeyHex: string): Promise<unknown> {
+    return this.post("/v1/runtimes", { runtime_id: runtimeId, public_key_hex: publicKeyHex });
+  }
 
   async health(): Promise<{ status: string; version: string }> {
     return this.get("/health");

@@ -64,10 +64,7 @@ pub struct Credential {
 impl Credential {
     pub fn is_valid(&self) -> bool {
         self.issuer_signature.is_some()
-            && self
-                .expires_at
-                .map(|exp| Utc::now() < exp)
-                .unwrap_or(true)
+            && self.expires_at.map(|exp| Utc::now() < exp).unwrap_or(true)
     }
 
     pub fn attribute(&self, name: &str) -> ByzResult<&CredentialAttribute> {
@@ -159,14 +156,9 @@ impl CredentialVerifier {
             .issuer_signature
             .as_ref()
             .ok_or(ByzantiumError::CredentialInvalid)?;
-        let sig_bytes =
-            hex::decode(sig_hex).map_err(|_| ByzantiumError::CredentialInvalid)?;
+        let sig_bytes = hex::decode(sig_hex).map_err(|_| ByzantiumError::CredentialInvalid)?;
         let sig = DilithiumSignature(sig_bytes);
-        byz_crypto::dilithium::verify(
-            cred.merkle_root.as_bytes(),
-            &sig,
-            &self.issuer_public_key,
-        )
+        byz_crypto::dilithium::verify(cred.merkle_root.as_bytes(), &sig, &self.issuer_public_key)
     }
 
     /// Verify that an attribute is present in a credential and satisfies a predicate.
@@ -210,7 +202,9 @@ mod tests {
         let subject = AgentDid::new("did:byz:00000000-0000-0000-0000-000000000001");
         let cred = issuer.issue(subject, attrs, None).unwrap();
 
-        verifier.verify_credential(&cred).expect("credential must verify");
+        verifier
+            .verify_credential(&cred)
+            .expect("credential must verify");
     }
 
     #[test]

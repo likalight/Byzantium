@@ -141,7 +141,11 @@ async fn trust_check_requires_auth() {
         .await
         .expect("request");
 
-    assert_eq!(res.status(), 401, "unauthenticated request must be rejected");
+    assert_eq!(
+        res.status(),
+        401,
+        "unauthenticated request must be rejected"
+    );
 }
 
 /// POST /v1/trust-check with a valid key but no mandate returns BLOCK verdict.
@@ -274,7 +278,10 @@ async fn create_mandate_and_retrieve() {
     // Accept either shape to be robust against potential serde changes.
     let serialised_did = get_body["agent_did"].clone();
     let did_matches = serialised_did == agent_did
-        || serialised_did.get("0").map(|v| v == &json!(agent_did)).unwrap_or(false);
+        || serialised_did
+            .get("0")
+            .map(|v| v == &json!(agent_did))
+            .unwrap_or(false);
     assert!(
         did_matches,
         "retrieved mandate agent_did must match {agent_did}; got: {get_body}"
@@ -328,7 +335,10 @@ async fn receipt_create_returns_signed_receipt() {
 
     let body: Value = res.json().await.expect("json body");
     assert!(
-        body["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).is_some(),
+        body["id"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .is_some(),
         "receipt id must be a UUID; got: {body}"
     );
     assert_eq!(body["action_type"], "payment");
@@ -387,10 +397,10 @@ async fn inclusion_proof_for_unbatched_receipt_returns_404() {
 /// store fails to connect — both are hard failures in the CI environment.
 #[cfg(feature = "integration-db")]
 async fn start_test_server_with_db() -> (String, String) {
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set for integration-db tests");
-    let redis_url = std::env::var("REDIS_URL")
-        .expect("REDIS_URL must be set for integration-db tests");
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration-db tests");
+    let redis_url =
+        std::env::var("REDIS_URL").expect("REDIS_URL must be set for integration-db tests");
 
     let api_key = format!("ci-db-key-{}", Uuid::new_v4());
 
@@ -436,7 +446,10 @@ async fn db_health_returns_ok() {
     assert_eq!(res.status(), 200);
 
     let body: Value = res.json().await.expect("json body");
-    assert_eq!(body["status"], "ok", "DB-backed health check must be ok; got: {body}");
+    assert_eq!(
+        body["status"], "ok",
+        "DB-backed health check must be ok; got: {body}"
+    );
     assert_eq!(body["checks"]["postgres"], "ok");
     assert_eq!(body["checks"]["redis"], "ok");
 }
@@ -506,11 +519,17 @@ async fn seal_batch_returns_merkle_root() {
 
     let body: Value = res.json().await.expect("seal json");
     assert!(
-        body["batch_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()).is_some(),
+        body["batch_id"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .is_some(),
         "batch_id must be a UUID; got: {body}"
     );
     assert!(
-        body["merkle_root"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
+        body["merkle_root"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
         "merkle_root must be non-empty; got: {body}"
     );
     assert_eq!(body["receipt_count"], 1);

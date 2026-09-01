@@ -22,9 +22,7 @@ pub fn spawn(state: AppState) {
 async fn run_once(state: &AppState) {
     let threshold = state.config.reputation.default_threshold;
 
-    let agent_dids: Vec<byz_common::AgentDid> = {
-        state.reputation.read().await.all_agent_dids()
-    };
+    let agent_dids: Vec<byz_common::AgentDid> = { state.reputation.read().await.all_agent_dids() };
 
     if agent_dids.is_empty() {
         return;
@@ -32,14 +30,17 @@ async fn run_once(state: &AppState) {
 
     tracing::debug!(count = agent_dids.len(), "proof-refresh: starting batch");
     let mut generated = 0u32;
-    let mut skipped  = 0u32;
+    let mut skipped = 0u32;
 
     for did in &agent_dids {
         let score = {
             let rep = state.reputation.read().await;
             match rep.score(did) {
                 Ok(s) => s,
-                Err(_) => { skipped += 1; continue; }
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
             }
         };
 
@@ -49,7 +50,7 @@ async fn run_once(state: &AppState) {
         }
 
         let commitment = match ScoreCommitment::new(&score) {
-            Ok(c)  => c,
+            Ok(c) => c,
             Err(e) => {
                 tracing::warn!(did = %did, error = %e, "proof-refresh: commitment failed");
                 skipped += 1;
@@ -58,8 +59,11 @@ async fn run_once(state: &AppState) {
         };
 
         let nonce = match hex::decode(&commitment.nonce_hex) {
-            Ok(n)  => n,
-            Err(_) => { skipped += 1; continue; }
+            Ok(n) => n,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
         };
 
         let valid_for = (state.config.gateway.proof_refresh_secs * 2).max(120) as i64;
@@ -74,7 +78,7 @@ async fn run_once(state: &AppState) {
         // SP1 proof generation is CPU-heavy — run in blocking thread pool.
         let prove_result = tokio::task::spawn_blocking(move || ThresholdProver::prove(req))
             .await
-            .unwrap_or_else(|_| Ok(None));
+            .unwrap_or(Ok(None));
 
         let proof_opt = match prove_result {
             Ok(opt) => opt,
@@ -97,5 +101,10 @@ async fn run_once(state: &AppState) {
         }
     }
 
-    tracing::info!(generated, skipped, total = agent_dids.len(), "proof-refresh: done");
+    tracing::info!(
+        generated,
+        skipped,
+        total = agent_dids.len(),
+        "proof-refresh: done"
+    );
 }

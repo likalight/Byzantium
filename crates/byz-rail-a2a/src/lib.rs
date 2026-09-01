@@ -57,8 +57,6 @@ pub struct A2ATrustResult {
 
 impl A2ATrustResult {
     pub fn is_allowed(&self) -> bool {
-        self.allowed
-            && self.from_verdict.is_pass()
-            && self.to_verdict.is_pass()
+        self.allowed && self.from_verdict.is_pass() && self.to_verdict.is_pass()
     }
 }

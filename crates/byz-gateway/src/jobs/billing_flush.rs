@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use byz_billing::UsageMeter;
+use std::sync::Arc;
 
 pub async fn run_billing_flush(meter: Arc<UsageMeter>) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));

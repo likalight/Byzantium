@@ -1,10 +1,8 @@
+use crate::state::AppState;
 use axum::{extract::State, Json};
 use serde_json::{json, Value};
-use crate::state::AppState;
 
-pub async fn get_usage(
-    State(state): State<AppState>,
-) -> Json<Value> {
+pub async fn get_usage(State(state): State<AppState>) -> Json<Value> {
     // In a real system you'd get the API key from the auth context.
     // For now return aggregate usage.
     let count = state.usage_meter.current_usage("default").await;

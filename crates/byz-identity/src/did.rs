@@ -71,7 +71,7 @@ impl DidDocument {
         let vm = self
             .verification_method
             .first()
-            .ok_or_else(|| ByzantiumError::CredentialInvalid)?;
+            .ok_or(ByzantiumError::CredentialInvalid)?;
         DilithiumPublicKey::from_hex(&vm.public_key_hex)
     }
 }
@@ -129,7 +129,6 @@ impl Did {
         let suffix = s
             .strip_prefix("did:byz:")
             .ok_or_else(|| ByzantiumError::AgentNotFound(s.to_string()))?;
-        Uuid::parse_str(suffix)
-            .map_err(|_| ByzantiumError::AgentNotFound(s.to_string()))
+        Uuid::parse_str(suffix).map_err(|_| ByzantiumError::AgentNotFound(s.to_string()))
     }
 }

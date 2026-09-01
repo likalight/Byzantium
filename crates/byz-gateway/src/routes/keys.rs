@@ -70,7 +70,6 @@ pub async fn create_key(
     Extension(operator_id): Extension<String>,
     Json(req): Json<CreateKeyRequest>,
 ) -> Result<Json<CreateKeyResponse>, (StatusCode, Json<Value>)> {
-
     let store = state.store.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -108,7 +107,6 @@ pub async fn list_keys(
     State(state): State<AppState>,
     Extension(operator_id): Extension<String>,
 ) -> Result<Json<Vec<ApiKeyInfo>>, (StatusCode, Json<Value>)> {
-
     let store = state.store.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -116,16 +114,12 @@ pub async fn list_keys(
         )
     })?;
 
-    let keys = store
-        .api_keys
-        .list(&operator_id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            )
-        })?;
+    let keys = store.api_keys.list(&operator_id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
 
     Ok(Json(keys.into_iter().map(ApiKeyInfo::from).collect()))
 }
@@ -136,7 +130,6 @@ pub async fn revoke_key(
     Extension(operator_id): Extension<String>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-
     let store = state.store.as_ref().ok_or_else(|| {
         (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -144,16 +137,12 @@ pub async fn revoke_key(
         )
     })?;
 
-    store
-        .api_keys
-        .revoke(id, &operator_id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "error": e.to_string() })),
-            )
-        })?;
+    store.api_keys.revoke(id, &operator_id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+    })?;
 
     tracing::info!(operator_id = %operator_id, key_id = %id, "api key revoked");
 

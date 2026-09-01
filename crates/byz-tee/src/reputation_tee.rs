@@ -8,10 +8,15 @@
 //! generate threshold proofs, and publish commitments + proofs to Redis.
 
 use anyhow::Result;
-use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
 use byz_common::AgentDid;
 use byz_crypto::DilithiumKeypair;
-use byz_proof::threshold::{ThresholdProveRequest, ThresholdProver, VerifiedThreshold};
+use byz_proof::threshold::{ThresholdProveRequest, ThresholdProver};
 use byz_reputation::{
     commitment::ScoreCommitment,
     scorer::{ReputationService, ScoringEvent},
@@ -56,9 +61,12 @@ async fn get_commitment(
     State(state): State<TeeState>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<CommitmentResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let did_str = body["agent_did"]
-        .as_str()
-        .ok_or_else(|| (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "missing agent_did" }))))?;
+    let did_str = body["agent_did"].as_str().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "missing agent_did" })),
+        )
+    })?;
     let threshold = body["threshold"]
         .as_u64()
         .map(|t| t as u32)
@@ -68,11 +76,17 @@ async fn get_commitment(
     let rep = state.reputation.read().await;
 
     let score = rep.score(&did).map_err(|e| {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e.to_string() })))
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
     })?;
 
     let commitment = ScoreCommitment::new(&score).map_err(|e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() })))
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
     })?;
 
     let meets = score.score >= threshold;
@@ -83,7 +97,7 @@ async fn get_commitment(
         match ThresholdProver::prove(ThresholdProveRequest {
             commitment_hex: commitment.commitment_hex.clone(),
             threshold,
-            score_private: score.score,  // private — never leaves enclave
+            score_private: score.score, // private — never leaves enclave
             nonce_private: nonce,
             valid_for_secs: 1800,
         }) {
@@ -125,8 +139,7 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::registry()
         .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "byz_reputation_tee=info".into()),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "byz_reputation_tee=info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

@@ -55,13 +55,11 @@ impl BatchRepository {
     }
 
     pub async fn get_root(&self, id: Uuid) -> ByzResult<String> {
-        sqlx::query_scalar::<_, String>(
-            "SELECT merkle_root FROM receipt_batches WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&*self.db)
-        .await
-        .map_err(|e| ByzantiumError::Database(e.to_string()))?
-        .ok_or_else(|| ByzantiumError::Internal(format!("batch {id} not found")))
+        sqlx::query_scalar::<_, String>("SELECT merkle_root FROM receipt_batches WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&*self.db)
+            .await
+            .map_err(|e| ByzantiumError::Database(e.to_string()))?
+            .ok_or_else(|| ByzantiumError::Internal(format!("batch {id} not found")))
     }
 }

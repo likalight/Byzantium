@@ -1,0 +1,75 @@
+name: Bug report
+description: Something behaves differently from how it is documented or intended.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is a **security** issue, please do not file it here — see
+        [SECURITY.md](https://github.com/likalight/Byzantium/blob/master/SECURITY.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - byz-underwrite (limits, issuance, guarantors, revocation)
+        - byz-reputation (scoring)
+        - byz-provenance (runtime-signed traces)
+        - byz-passport (delegation, keys)
+        - byz-tap (RFC 9421, limit extension)
+        - byz-mandate (enforcement, exposure)
+        - byz-gateway (HTTP API)
+        - byz-store (persistence)
+        - Payment rails (EIP-3009 / Solana / x402 / A2A)
+        - SDK (Rust or TypeScript)
+        - Deployment / Docker / Kubernetes
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        A failing test is the fastest possible path to a fix. Otherwise, the
+        exact requests or commands, in order.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      value: |
+        - Byzantium version / commit:
+        - Rust version (`rustc --version`):
+        - OS:
+        - Running via: docker compose / cargo run / Kubernetes
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        Set `RUST_LOG=byzantium=debug`. Please redact API keys, DIDs you would
+        rather not publish, and anything identifying a principal.
+      render: shell

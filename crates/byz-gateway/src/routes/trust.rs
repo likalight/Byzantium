@@ -54,8 +54,18 @@ async fn trust_check_inner(
     let compliance = async {
         let engine = state.mandate_engine.read().await;
         engine
-            .check(&req.agent_did, &req.action_type, req.amount_cents, req.counterparty.as_ref())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))
+            .check(
+                &req.agent_did,
+                &req.action_type,
+                req.amount_cents,
+                req.counterparty.as_ref(),
+            )
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+            })
     }
     .instrument(tracing::info_span!(
         "mandate_check",
@@ -102,9 +112,13 @@ async fn trust_check_inner(
             payload: json!({ "reason": "reputation below threshold" }),
         };
         let w = state.webhooks.clone();
-        tokio::spawn(async move { w.dispatch(event).await; });
+        tokio::spawn(async move {
+            w.dispatch(event).await;
+        });
         return Ok(Json(TrustCheckResponse {
-            verdict: TrustVerdict::Flag { reason: "reputation below threshold".to_string() },
+            verdict: TrustVerdict::Flag {
+                reason: "reputation below threshold".to_string(),
+            },
             token: None,
             request_id,
             checked_at: Utc::now(),
@@ -116,12 +130,20 @@ async fn trust_check_inner(
     let valid_until = Utc::now() + chrono::Duration::seconds(30);
     let payload = format!(
         "{}:{}:{}:{}",
-        req.agent_did, compliance.mandate_hash, true, valid_until.timestamp()
+        req.agent_did,
+        compliance.mandate_hash,
+        true,
+        valid_until.timestamp()
     );
     let sig = state
         .gateway_keypair
         .sign(payload.as_bytes())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })?;
 
     let token = PassToken {
         agent_did: req.agent_did.clone(),
@@ -148,7 +170,9 @@ async fn trust_check_inner(
             payload: json!({ "latency_ms": latency }),
         };
         let w = state.webhooks.clone();
-        tokio::spawn(async move { w.dispatch(event).await; });
+        tokio::spawn(async move {
+            w.dispatch(event).await;
+        });
     }
 
     // ── Step 4: record spend (fire-and-forget) ────────────────────────────────
@@ -163,7 +187,9 @@ async fn trust_check_inner(
     // ── Billing: record usage for this trust check (fire-and-forget) ─────────
     {
         let meter = state.usage_meter.clone();
-        tokio::spawn(async move { meter.record("default").await; });
+        tokio::spawn(async move {
+            meter.record("default").await;
+        });
     }
 
     Ok(Json(TrustCheckResponse {
@@ -177,7 +203,7 @@ async fn trust_check_inner(
 
 fn verdict_label(v: &TrustVerdict) -> &'static str {
     match v {
-        TrustVerdict::Pass        => "PASS",
+        TrustVerdict::Pass => "PASS",
         TrustVerdict::Flag { .. } => "FLAG",
         TrustVerdict::Block { .. } => "BLOCK",
     }
@@ -223,5 +249,10 @@ async fn check_reputation(
         .await
         .meets_threshold(agent_did, None)
         .map(|(ok, _)| ok)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
+        })
 }

@@ -140,10 +140,7 @@ pub async fn per_key_rate_limit(
             HeaderValue::from_str(&limit.to_string()).unwrap(),
         );
         if let Some(remaining) = state.rate_limiter.remaining(key) {
-            hdrs.insert(
-                "X-RateLimit-Remaining",
-                HeaderValue::from(remaining),
-            );
+            hdrs.insert("X-RateLimit-Remaining", HeaderValue::from(remaining));
         }
         hdrs.insert(
             "X-RateLimit-Reset",

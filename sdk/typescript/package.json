@@ -39,12 +39,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/byzantium-technologies/byzantium.git",
+    "url": "https://github.com/likalight/Byzantium.git",
     "directory": "sdk/typescript"
   },
-  "homepage": "https://github.com/byzantium-technologies/byzantium#readme",
+  "homepage": "https://github.com/likalight/Byzantium#readme",
   "bugs": {
-    "url": "https://github.com/byzantium-technologies/byzantium/issues"
+    "url": "https://github.com/likalight/Byzantium/issues"
   },
   "dependencies": {},
   "devDependencies": {

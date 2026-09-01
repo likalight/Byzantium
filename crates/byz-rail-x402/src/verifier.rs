@@ -4,7 +4,7 @@
 //! resources. It simultaneously validates the payment proof AND calls the
 //! Byzantium trust-check endpoint.
 
-use byz_common::{ActionType, AgentDid, TrustVerdict};
+use byz_common::{AgentDid, TrustVerdict};
 use chrono::Utc;
 use uuid::Uuid;
 

@@ -8,6 +8,7 @@ use serde_json::json;
 
 /// Parsed post-balance entry from getTransaction
 #[derive(Debug)]
+#[allow(dead_code)]
 struct TokenBalance {
     account_index: usize,
     mint: String,
@@ -42,9 +43,9 @@ impl SolanaVerifier {
     pub fn for_cluster(cluster: &str, byzantium_url: impl Into<String>) -> Self {
         let rpc_url = match cluster {
             "mainnet-beta" => "https://api.mainnet-beta.solana.com",
-            "devnet"       => "https://api.devnet.solana.com",
-            "testnet"      => "https://api.testnet.solana.com",
-            other          => other, // custom RPC URL passthrough
+            "devnet" => "https://api.devnet.solana.com",
+            "testnet" => "https://api.testnet.solana.com",
+            other => other, // custom RPC URL passthrough
         };
         Self::new(rpc_url, byzantium_url)
     }
@@ -59,8 +60,11 @@ impl SolanaVerifier {
         let tx = self.get_transaction(&proof.signature).await?;
 
         // 2. Check finalization and success
-        let meta = tx["result"]["meta"].as_object()
-            .ok_or(SolanaRailError::TransactionNotFound(proof.signature.clone()))?;
+        let meta = tx["result"]["meta"]
+            .as_object()
+            .ok_or(SolanaRailError::TransactionNotFound(
+                proof.signature.clone(),
+            ))?;
 
         if meta.get("err").and_then(|e| e.as_null()).is_none()
             && meta["err"] != serde_json::Value::Null
@@ -114,10 +118,7 @@ impl SolanaVerifier {
         }
 
         // Verify sender appears in signers (index 0 = fee payer / signer)
-        let actual_sender = account_keys
-            .first()
-            .and_then(|k| k.as_str())
-            .unwrap_or("");
+        let actual_sender = account_keys.first().and_then(|k| k.as_str()).unwrap_or("");
 
         if actual_sender != proof.from_wallet {
             return Ok(VerificationResult {
@@ -128,15 +129,12 @@ impl SolanaVerifier {
         }
 
         // Amount check — post-balance may be cumulative; use the pre/post diff
-        let pre_balances = meta
-            .get("preTokenBalances")
-            .and_then(|b| b.as_array());
+        let pre_balances = meta.get("preTokenBalances").and_then(|b| b.as_array());
 
         let pre_amount: u64 = pre_balances
             .and_then(|pbs| {
-                pbs.iter().find(|b| {
-                    b["accountIndex"].as_u64().map(|i| i as usize) == recipient_index
-                })
+                pbs.iter()
+                    .find(|b| b["accountIndex"].as_u64().map(|i| i as usize) == recipient_index)
             })
             .and_then(|b| b["uiTokenAmount"]["amount"].as_str())
             .and_then(|s| s.parse().ok())
@@ -153,7 +151,9 @@ impl SolanaVerifier {
 
         // 4. Byzantium trust-check on sender DID
         let sender_did = format!("did:sol:{}", proof.from_wallet);
-        let trust_ok = self.byzantium_trust_check(&sender_did, proof.amount, api_key).await?;
+        let trust_ok = self
+            .byzantium_trust_check(&sender_did, proof.amount, api_key)
+            .await?;
         if !trust_ok {
             return Ok(VerificationResult {
                 status: TransferStatus::TrustBlocked,
@@ -265,7 +265,7 @@ mod tests {
         SolanaTransferProof {
             signature: "5hG3j9kX2mNv8pQr4tUw6yZa1bCd3eF7gHiJkLmNoPqRsTuVwXyZ2aBcDeF4gH".to_string(),
             from_wallet: "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH".to_string(),
-            to_wallet:   "7xKXtg2CW87d9T1mq9hPn5eqFQFXKJJVGGBJqKdXrGx".to_string(),
+            to_wallet: "7xKXtg2CW87d9T1mq9hPn5eqFQFXKJJVGGBJqKdXrGx".to_string(),
             mint: USDC_MINT_MAINNET.to_string(),
             amount: 1_000_000,
             cluster: "mainnet-beta".to_string(),

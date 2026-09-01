@@ -57,8 +57,8 @@ impl KyberKeypair {
 
     /// Decapsulate a ciphertext to recover the shared secret.
     pub fn decapsulate(&self, ciphertext_hex: &str) -> ByzResult<String> {
-        let ct_bytes = hex::decode(ciphertext_hex)
-            .map_err(|e| ByzantiumError::Crypto(e.to_string()))?;
+        let ct_bytes =
+            hex::decode(ciphertext_hex).map_err(|e| ByzantiumError::Crypto(e.to_string()))?;
         let sk = kyber1024::SecretKey::from_bytes(&self.secret_key.0)
             .map_err(|e| ByzantiumError::Crypto(format!("invalid secret key: {e}")))?;
         let ct = kyber1024::Ciphertext::from_bytes(&ct_bytes)

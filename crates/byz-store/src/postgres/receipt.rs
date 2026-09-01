@@ -28,8 +28,7 @@ impl ReceiptRepository {
     }
 
     pub async fn insert(&self, r: &LiabilityReceipt) -> ByzResult<()> {
-        let outcome = serde_json::to_string(&r.outcome)
-            .map_err(ByzantiumError::Serialization)?;
+        let outcome = serde_json::to_string(&r.outcome).map_err(ByzantiumError::Serialization)?;
         let leaf_hash = sha256_hex(r.canonical_hash_input().as_bytes());
 
         sqlx::query(
@@ -102,14 +101,30 @@ impl ReceiptRepository {
         let mut out = Vec::with_capacity(rows.len());
         for row in rows {
             out.push(ReceiptRow {
-                id: row.try_get("id").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                agent_did: row.try_get("agent_did").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                mandate_id: row.try_get("mandate_id").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                rail_id: row.try_get("rail_id").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                amount_cents: row.try_get("amount_cents").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                outcome: row.try_get("outcome").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                timestamp: row.try_get("timestamp").map_err(|e| ByzantiumError::Database(e.to_string()))?,
-                batch_id: row.try_get("batch_id").map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                id: row
+                    .try_get("id")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                agent_did: row
+                    .try_get("agent_did")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                mandate_id: row
+                    .try_get("mandate_id")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                rail_id: row
+                    .try_get("rail_id")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                amount_cents: row
+                    .try_get("amount_cents")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                outcome: row
+                    .try_get("outcome")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                timestamp: row
+                    .try_get("timestamp")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
+                batch_id: row
+                    .try_get("batch_id")
+                    .map_err(|e| ByzantiumError::Database(e.to_string()))?,
             });
         }
         Ok(out)

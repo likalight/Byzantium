@@ -1,6 +1,7 @@
 //! Payment proof validation helpers.
 
 use crate::{error::X402Error, PaymentProof, PaymentRequired};
+use base64::Engine as _;
 
 /// Validate that a proof matches the payment request.
 /// Does NOT do on-chain verification — that requires an Ethereum RPC call.
@@ -38,7 +39,8 @@ pub fn validate_proof_format(
 
 /// Parse an X-Payment-Proof header value into a PaymentProof.
 pub fn parse_proof_header(header_value: &str) -> Result<PaymentProof, X402Error> {
-    let decoded = base64::decode(header_value)
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(header_value)
         .map_err(|e| X402Error::MissingProof(format!("base64 decode failed: {e}")))?;
     serde_json::from_slice(&decoded)
         .map_err(|e| X402Error::MissingProof(format!("json decode failed: {e}")))
@@ -46,7 +48,8 @@ pub fn parse_proof_header(header_value: &str) -> Result<PaymentProof, X402Error>
 
 /// Parse an X-Payment-Required header value into a PaymentRequired.
 pub fn parse_required_header(header_value: &str) -> Result<PaymentRequired, X402Error> {
-    let decoded = base64::decode(header_value)
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(header_value)
         .map_err(|e| X402Error::MissingProof(format!("base64 decode failed: {e}")))?;
     serde_json::from_slice(&decoded)
         .map_err(|e| X402Error::MissingProof(format!("json decode failed: {e}")))

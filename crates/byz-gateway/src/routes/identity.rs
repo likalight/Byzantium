@@ -1,3 +1,4 @@
+use crate::state::AppState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -8,7 +9,6 @@ use byz_crypto::DilithiumKeypair;
 use byz_identity::did::{Did, DidDocument};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterAgentRequest {
@@ -34,7 +34,10 @@ pub async fn register_agent(
     // Persist DID document.
     if let Some(store) = &state.store {
         store.agents.insert(&doc).await.map_err(|e| {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
     }
     state.did_resolver.write().await.register(doc);
@@ -55,7 +58,10 @@ pub async fn get_agent(
     // Prefer persistent store for the authoritative DID document.
     if let Some(store) = &state.store {
         let row = store.agents.get(&did).await.map_err(|e| {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
         return Ok(Json(json!({
             "did": row.did,
@@ -68,7 +74,10 @@ pub async fn get_agent(
 
     let resolver = state.did_resolver.read().await;
     let doc = resolver.resolve(&did).map_err(|e| {
-        (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": e.to_string() })),
+        )
     })?;
     Ok(Json(serde_json::to_value(doc).unwrap()))
 }
@@ -80,7 +89,10 @@ pub async fn deactivate_agent(
     let did = AgentDid::new(&did_str);
     if let Some(store) = &state.store {
         store.agents.deactivate(&did).await.map_err(|e| {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": e.to_string() })))
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": e.to_string() })),
+            )
         })?;
     }
     state.did_resolver.write().await.deactivate(&did).ok();

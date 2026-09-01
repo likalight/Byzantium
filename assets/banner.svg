@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-label="Byzantium — the underwriting layer for autonomous agents">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B1018"/>
+      <stop offset="55%" stop-color="#0D1522"/>
+      <stop offset="100%" stop-color="#101C2E"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4FA3F5"/>
+      <stop offset="65%" stop-color="#4FA3F5" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#4FA3F5" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4FA3F5" stop-opacity=".16"/>
+      <stop offset="100%" stop-color="#4FA3F5" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1B2635" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="340" fill="url(#ground)"/>
+  <rect width="1280" height="340" fill="url(#grid)" opacity=".5"/>
+  <rect x="760" y="0" width="520" height="340" fill="url(#glow)"/>
+
+  <!-- wordmark -->
+  <text x="80" y="140"
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="76" font-weight="700" letter-spacing="-2.4" fill="#EDF1F7">Byzantium</text>
+
+  <rect x="80" y="166" width="420" height="2" fill="url(#rule)"/>
+
+  <text x="80" y="206"
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="21" font-weight="500" fill="#9AA6B8">The underwriting layer for autonomous agents.</text>
+
+  <text x="80" y="240"
+        font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="13.5" letter-spacing="1.2" fill="#68738A">Portable, KYC-anchored transaction limits that any chain honours on arrival.</text>
+
+  <!-- portability motif: earned on one chain, honoured on the next -->
+  <g transform="translate(80,272)">
+    <rect x="0" y="0" width="150" height="34" rx="4" fill="#0E141D" stroke="#212B3A"/>
+    <text x="14" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          font-size="12" fill="#9AA6B8">earned on Base</text>
+
+    <line x1="160" y1="17" x2="192" y2="17" stroke="#3A4757" stroke-width="1.2"/>
+    <path d="M192 13l7 4-7 4z" fill="#3A4757"/>
+
+    <rect x="206" y="0" width="176" height="34" rx="4" fill="#122840" stroke="#4FA3F5"/>
+    <text x="220" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          font-size="12" fill="#8CC6FF">signed limit attestation</text>
+
+    <line x1="392" y1="17" x2="424" y2="17" stroke="#3A4757" stroke-width="1.2"/>
+    <path d="M424 13l7 4-7 4z" fill="#3A4757"/>
+
+    <rect x="438" y="0" width="186" height="34" rx="4" fill="#0E141D" stroke="#212B3A"/>
+    <text x="452" y="22" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+          font-size="12" fill="#9AA6B8">honoured on Solana</text>
+  </g>
+
+  <!-- right-hand seal -->
+  <g transform="translate(1010,80)" opacity=".92">
+    <circle cx="90" cy="90" r="86" fill="none" stroke="#1E2A3A" stroke-width="1"/>
+    <circle cx="90" cy="90" r="66" fill="none" stroke="#22303F" stroke-width="1"/>
+    <circle cx="90" cy="90" r="46" fill="none" stroke="#4FA3F5" stroke-width="1.2" stroke-dasharray="4 6"/>
+    <path d="M90 46 L128 68 L128 112 L90 134 L52 112 L52 68 Z"
+          fill="#122840" stroke="#4FA3F5" stroke-width="1.4"/>
+    <path d="M74 90 l11 11 l22 -24" fill="none" stroke="#8CC6FF" stroke-width="2.6"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="1200" y="316" text-anchor="end"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        font-size="11" letter-spacing="1.6" fill="#48546A">ML-DSA · RFC 9421 · MIT</text>
+</svg>

@@ -11,43 +11,69 @@ pub struct Metrics {
 
 #[derive(Default)]
 struct MetricsInner {
-    trust_checks_total:  AtomicU64,
-    trust_pass:          AtomicU64,
-    trust_flag:          AtomicU64,
-    trust_block:         AtomicU64,
-    latency_sum_ms:      AtomicU64,
-    proof_cache_hits:    AtomicU64,
-    proof_cache_misses:  AtomicU64,
-    receipts_created:    AtomicU64,
-    batches_sealed:      AtomicU64,
-    mandates_created:    AtomicU64,
-    agents_registered:   AtomicU64,
+    trust_checks_total: AtomicU64,
+    trust_pass: AtomicU64,
+    trust_flag: AtomicU64,
+    trust_block: AtomicU64,
+    latency_sum_ms: AtomicU64,
+    proof_cache_hits: AtomicU64,
+    proof_cache_misses: AtomicU64,
+    receipts_created: AtomicU64,
+    batches_sealed: AtomicU64,
+    mandates_created: AtomicU64,
+    agents_registered: AtomicU64,
 }
 
 impl Metrics {
     pub fn record_trust_check(&self, verdict: &str, latency_ms: u64) {
-        self.inner.trust_checks_total.fetch_add(1, Ordering::Relaxed);
-        self.inner.latency_sum_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.inner
+            .trust_checks_total
+            .fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .latency_sum_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
         match verdict {
-            "PASS"  => { self.inner.trust_pass.fetch_add(1, Ordering::Relaxed); }
-            "FLAG"  => { self.inner.trust_flag.fetch_add(1, Ordering::Relaxed); }
-            _       => { self.inner.trust_block.fetch_add(1, Ordering::Relaxed); }
+            "PASS" => {
+                self.inner.trust_pass.fetch_add(1, Ordering::Relaxed);
+            }
+            "FLAG" => {
+                self.inner.trust_flag.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => {
+                self.inner.trust_block.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 
-    pub fn record_proof_cache_hit(&self)  { self.inner.proof_cache_hits.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_proof_cache_miss(&self) { self.inner.proof_cache_misses.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_receipt_created(&self)  { self.inner.receipts_created.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_batch_sealed(&self)     { self.inner.batches_sealed.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_mandate_created(&self)  { self.inner.mandates_created.fetch_add(1, Ordering::Relaxed); }
-    pub fn record_agent_registered(&self) { self.inner.agents_registered.fetch_add(1, Ordering::Relaxed); }
+    pub fn record_proof_cache_hit(&self) {
+        self.inner.proof_cache_hits.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_proof_cache_miss(&self) {
+        self.inner
+            .proof_cache_misses
+            .fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_receipt_created(&self) {
+        self.inner.receipts_created.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_batch_sealed(&self) {
+        self.inner.batches_sealed.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_mandate_created(&self) {
+        self.inner.mandates_created.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_agent_registered(&self) {
+        self.inner.agents_registered.fetch_add(1, Ordering::Relaxed);
+    }
 
     pub fn render(&self) -> String {
         let i = &self.inner;
         let total = i.trust_checks_total.load(Ordering::Relaxed);
-        let avg_latency = if total > 0 {
-            i.latency_sum_ms.load(Ordering::Relaxed) / total
-        } else { 0 };
+        let avg_latency = i
+            .latency_sum_ms
+            .load(Ordering::Relaxed)
+            .checked_div(total)
+            .unwrap_or(0);
 
         format!(
             "# HELP byz_trust_checks_total Total trust-check requests\n\

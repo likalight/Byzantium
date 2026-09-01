@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a capability or a change in behaviour.
+labels: ["enhancement", "triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: >
+        Describe the situation you are actually in, not the solution you have in
+        mind. The best proposals here have started from a concrete failure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Does this affect how a limit is decided, signed, or enforced?
+      description: >
+        If yes, the proposal should say what abuse it opens up and how that is
+        closed. Anything that can raise a limit can be farmed.
+      options:
+        - "No — it does not touch limits, scoring, signatures, or enforcement"
+        - "Yes — and I have described the abuse case below"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: abuse
+    attributes:
+      label: Abuse case, if applicable
+      description: >
+        How would someone exploit this to obtain a larger limit than they should
+        have, or to get a draw honoured that should have been refused?
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

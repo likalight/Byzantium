@@ -9,6 +9,7 @@
 //! Regulators call VerifiedGet to get the stored root plus a Merkle proof
 //! without needing to trust Byzantium.
 
+use base64::Engine as _;
 use byz_common::{ByzResult, ByzantiumError};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -100,14 +101,17 @@ impl ImmudbClient {
             *self.token.lock().await = None;
             match self.auth_token().await {
                 Ok(_) => {
-                    self.online.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.online
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
                     tracing::info!("immudb reconnected after {} retries", i + 1);
                     return Ok(());
                 }
                 Err(e) => tracing::warn!(attempt = i + 1, error = %e, "immudb reconnect failed"),
             }
         }
-        Err(ByzantiumError::Anchor("immudb reconnect failed after 3 attempts".into()))
+        Err(ByzantiumError::Anchor(
+            "immudb reconnect failed after 3 attempts".into(),
+        ))
     }
 
     async fn auth_token(&self) -> ByzResult<String> {
@@ -119,8 +123,8 @@ impl ImmudbClient {
             .http
             .post(format!("{}/login", self.base_url))
             .json(&serde_json::json!({
-                "user": base64::encode(&self.username),
-                "password": base64::encode(&self.password),
+                "user": base64::engine::general_purpose::STANDARD.encode(&self.username),
+                "password": base64::engine::general_purpose::STANDARD.encode(&self.password),
             }))
             .send()
             .await
@@ -150,7 +154,8 @@ impl ImmudbClient {
             Ok(tx_id) => Ok(tx_id),
             Err(e) => {
                 tracing::warn!(error = %e, "immudb write failed on first attempt — reconnecting");
-                self.online.store(false, std::sync::atomic::Ordering::Relaxed);
+                self.online
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 self.reconnect().await?;
                 // Retry the write once after successful reconnect
                 self.set_once(key, value).await.map_err(|e2| {
@@ -169,15 +174,15 @@ impl ImmudbClient {
 
     /// Single attempt to write a key/value to immudb. Does not retry.
     async fn set_once(&self, key: &str, value: &str) -> ByzResult<u64> {
-        let token = self.auth_token().await.map_err(|e| {
-            self.online.store(false, std::sync::atomic::Ordering::Relaxed);
-            e
+        let token = self.auth_token().await.inspect_err(|_| {
+            self.online
+                .store(false, std::sync::atomic::Ordering::Relaxed);
         })?;
 
         let body = SetRequest {
             kvs: vec![KvPair {
-                key: base64::encode(key),
-                value: base64::encode(value),
+                key: base64::engine::general_purpose::STANDARD.encode(key),
+                value: base64::engine::general_purpose::STANDARD.encode(value),
             }],
         };
 
@@ -191,8 +196,10 @@ impl ImmudbClient {
 
         match resp {
             Ok(r) if r.status().is_success() => {
-                let set_resp: SetResponse =
-                    r.json().await.map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
+                let set_resp: SetResponse = r
+                    .json()
+                    .await
+                    .map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
                 let tx_id = set_resp.id.unwrap_or(0);
                 tracing::info!(key, tx_id, "immudb write ok");
                 Ok(tx_id)
@@ -200,11 +207,17 @@ impl ImmudbClient {
             Ok(r) if r.status().as_u16() == 401 => {
                 // Token expired — clear so next call re-authenticates
                 *self.token.lock().await = None;
-                Err(ByzantiumError::Anchor("immudb auth token expired (401)".into()))
+                Err(ByzantiumError::Anchor(
+                    "immudb auth token expired (401)".into(),
+                ))
             }
-            Ok(r) => Err(ByzantiumError::Anchor(format!("immudb set failed: {}", r.status()))),
+            Ok(r) => Err(ByzantiumError::Anchor(format!(
+                "immudb set failed: {}",
+                r.status()
+            ))),
             Err(e) => {
-                self.online.store(false, std::sync::atomic::Ordering::Relaxed);
+                self.online
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 Err(ByzantiumError::Anchor(format!("immudb unreachable: {e}")))
             }
         }
@@ -217,19 +230,31 @@ impl ImmudbClient {
         let token = self.auth_token().await?;
         let resp = self
             .http
-            .get(format!("{}/db/{}/get/{}", self.base_url, self.database, base64::encode(key)))
+            .get(format!(
+                "{}/db/{}/get/{}",
+                self.base_url,
+                self.database,
+                base64::engine::general_purpose::STANDARD.encode(key)
+            ))
             .bearer_auth(&token)
             .send()
             .await
             .map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(ByzantiumError::Anchor(format!("immudb get failed: {}", resp.status())));
+            return Err(ByzantiumError::Anchor(format!(
+                "immudb get failed: {}",
+                resp.status()
+            )));
         }
-        let body: serde_json::Value =
-            resp.json().await.map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
         let b64 = body["value"].as_str().unwrap_or("");
-        let bytes = base64::decode(b64).map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| ByzantiumError::Anchor(e.to_string()))?;
         Ok(String::from_utf8_lossy(&bytes).to_string())
     }
 }

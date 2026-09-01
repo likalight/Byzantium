@@ -2,8 +2,10 @@ pub mod a2a;
 pub mod audit;
 pub mod identity;
 pub mod keys;
+pub mod limits;
 pub mod mandate;
 pub mod payments;
+pub mod provenance;
 pub mod receipt;
 pub mod trust;
 pub mod usage;
@@ -16,38 +18,63 @@ use axum::{
 };
 
 use crate::{
-    middleware::{auth::require_api_key, rate_limit::per_key_rate_limit, request_id::propagate_request_id},
+    middleware::{
+        auth::require_api_key, rate_limit::per_key_rate_limit, request_id::propagate_request_id,
+    },
     state::AppState,
 };
 
 pub fn router(state: AppState) -> Router {
     // Protected routes — require Bearer API key + per-key rate limiting
     let protected = Router::new()
-        .route("/v1/trust-check",                   post(trust::trust_check))
-        .route("/v1/mandates",                       post(mandate::create_mandate))
-        .route("/v1/mandates/:id",                   get(mandate::get_mandate))
-        .route("/v1/mandates/:id/revoke",            post(mandate::revoke_mandate))
-        .route("/v1/receipts",                       post(receipt::create_receipt))
-        .route("/v1/receipts/:id/proof",             get(receipt::inclusion_proof))
-        .route("/v1/batches/:id/seal",               post(receipt::seal_batch))
-        .route("/v1/agents",                         post(identity::register_agent))
-        .route("/v1/agents/:did",                    get(identity::get_agent))
-        .route("/v1/agents/:did/deactivate",         post(identity::deactivate_agent))
-        .route("/v1/audit/receipts",                 get(audit::list_receipts))
-        .route("/v1/audit/batches/:id",              get(audit::get_batch_proof))
-        .route("/v1/payments/eip3009/verify",        post(payments::verify_eip3009))
-        .route("/v1/payments/solana/verify",         post(payments::verify_solana))
-        .route("/v1/payments/x402/verify",           post(x402::verify_x402))
-        .route("/v1/a2a/check",                      post(a2a::check_a2a))
-        .route("/v1/keys",                           post(keys::create_key).get(keys::list_keys))
-        .route("/v1/keys/:id",                       delete(keys::revoke_key))
-        .route("/v1/usage",                          get(usage::get_usage))
-        .layer(middleware::from_fn_with_state(state.clone(), per_key_rate_limit))
-        .layer(middleware::from_fn_with_state(state.clone(), require_api_key));
+        .route("/v1/trust-check", post(trust::trust_check))
+        .route("/v1/mandates", post(mandate::create_mandate))
+        .route("/v1/mandates/:id", get(mandate::get_mandate))
+        .route("/v1/mandates/:id/revoke", post(mandate::revoke_mandate))
+        .route("/v1/receipts", post(receipt::create_receipt))
+        .route("/v1/receipts/:id/proof", get(receipt::inclusion_proof))
+        .route("/v1/batches/:id/seal", post(receipt::seal_batch))
+        .route("/v1/agents", post(identity::register_agent))
+        .route("/v1/agents/:did", get(identity::get_agent))
+        .route(
+            "/v1/agents/:did/deactivate",
+            post(identity::deactivate_agent),
+        )
+        .route("/v1/audit/receipts", get(audit::list_receipts))
+        .route("/v1/audit/batches/:id", get(audit::get_batch_proof))
+        .route(
+            "/v1/payments/eip3009/verify",
+            post(payments::verify_eip3009),
+        )
+        .route("/v1/payments/solana/verify", post(payments::verify_solana))
+        .route("/v1/payments/x402/verify", post(x402::verify_x402))
+        .route("/v1/a2a/check", post(a2a::check_a2a))
+        .route("/v1/keys", post(keys::create_key).get(keys::list_keys))
+        .route("/v1/keys/:id", delete(keys::revoke_key))
+        .route("/v1/usage", get(usage::get_usage))
+        // ── Underwriting: issue a portable limit, and honor one on presentation ──
+        .route("/v1/principals", post(limits::register_principal))
+        .route("/v1/limits/issue", post(limits::issue_limit))
+        .route("/v1/limits/verify", post(limits::verify_limit))
+        .route("/v1/limits/settle", post(limits::settle_draw))
+        .route("/v1/limits/revoke", post(limits::revoke_limits))
+        // ── Provenance: runtime-signed execution evidence ────────────────────────
+        .route("/v1/runtimes", post(provenance::register_runtime))
+        .route("/v1/runtimes/revoke", post(provenance::revoke_runtime))
+        .route("/v1/provenance", post(provenance::submit_provenance))
+        .route("/v1/provenance/:did", get(provenance::get_provenance))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            per_key_rate_limit,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
 
     // Public routes — no auth, no rate limit
     let public = Router::new()
-        .route("/health",  get(health))
+        .route("/health", get(health))
         .route("/metrics", get(metrics));
 
     Router::new()
@@ -127,12 +154,17 @@ async fn metrics(
                 axum::http::StatusCode::UNAUTHORIZED,
                 [(axum::http::header::CONTENT_TYPE, "text/plain")],
                 "Unauthorized",
-            ).into_response();
+            )
+                .into_response();
         }
     }
     (
         axum::http::StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
         state.metrics.render(),
-    ).into_response()
+    )
+        .into_response()
 }

@@ -21,8 +21,7 @@ use serde::{Deserialize, Serialize};
 /// Guest ELF compiled by `cd programs && cargo prove build`.
 /// Committed to the repo after first build so CI doesn't need the toolchain.
 #[cfg(feature = "sp1")]
-const THRESHOLD_ELF: &[u8] =
-    include_bytes!("../../../programs/elf/threshold-proof");
+const THRESHOLD_ELF: &[u8] = include_bytes!("../../../programs/elf/threshold-proof");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThresholdPublicInputs {
@@ -96,7 +95,7 @@ impl ThresholdProver {
         let mut stdin = SP1Stdin::new();
         stdin.write(&req.commitment_hex);
         stdin.write(&req.threshold);
-        stdin.write(&req.score_private);   // private — goes into zkVM witness
+        stdin.write(&req.score_private); // private — goes into zkVM witness
         stdin.write(&req.nonce_private);
 
         match client.prove(&pk, stdin).run() {
@@ -110,8 +109,7 @@ impl ThresholdProver {
                     proof_bytes,
                     vk_hash: vk.bytes32().to_string(),
                     generated_at: chrono::Utc::now(),
-                    valid_until: chrono::Utc::now()
-                        + chrono::Duration::seconds(req.valid_for_secs),
+                    valid_until: chrono::Utc::now() + chrono::Duration::seconds(req.valid_for_secs),
                 })
             }
             Err(e) => {
@@ -120,7 +118,6 @@ impl ThresholdProver {
             }
         }
     }
-
 }
 
 pub struct ThresholdVerifier;

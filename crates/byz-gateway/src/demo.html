@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byzantium — live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#080B11; --panel:#0E141D; --panel-2:#141C27; --panel-3:#1B2532;
+  --ink:#EDF1F7; --ink-2:#9AA6B8; --ink-3:#68738A;
+  --rule:#212B3A; --accent:#4FA3F5; --accent-2:#8CC6FF; --accent-wash:#122840;
+  --good:#5FBE95; --good-wash:#12261E;
+  --bad:#E8736B; --bad-wash:#2C1918;
+  --warn:#E0A64A; --warn-wash:#2A2113;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"Archivo",system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1240px; margin:0 auto; padding:26px 24px 60px}
+
+header{display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding-bottom:18px; border-bottom:1px solid var(--rule)}
+.brand{font-weight:700; font-size:1.3rem; letter-spacing:-.02em}
+.brand span{color:var(--accent)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.did{font-size:11px; color:var(--ink-3); letter-spacing:.04em}
+.spacer{flex:1}
+button{
+  font-family:inherit; font-weight:600; font-size:14px; cursor:pointer;
+  background:var(--accent); color:#04121F; border:0; border-radius:4px;
+  padding:11px 22px; letter-spacing:-.01em;
+}
+button:hover{background:var(--accent-2)}
+button:disabled{background:var(--panel-3); color:var(--ink-3); cursor:not-allowed}
+button.ghost{background:transparent; color:var(--ink-2); border:1px solid var(--rule)}
+button.ghost:hover{color:var(--ink); border-color:var(--ink-3)}
+button:focus-visible{outline:2px solid var(--accent-2); outline-offset:3px}
+
+.grid{display:grid; gap:16px; margin-top:20px}
+.top{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+@media (max-width:980px){.top{grid-template-columns:1fr}}
+
+.card{background:var(--panel); border:1px solid var(--rule); border-radius:6px; padding:20px 22px}
+.card h2{
+  margin:0 0 16px; font-size:10.5px; font-weight:600; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--ink-3); font-family:"IBM Plex Mono",monospace;
+}
+
+.limit{font-weight:700; font-size:clamp(2.4rem,6vw,3.9rem); letter-spacing:-.035em; line-height:1; font-variant-numeric:tabular-nums; transition:color .3s}
+.limit.up{color:var(--good)}
+.limitrow{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap}
+.delta{font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--good); opacity:0; transition:opacity .4s}
+.delta.show{opacity:1}
+.pills{display:flex; gap:8px; margin-top:16px; flex-wrap:wrap}
+.pill{font-family:"IBM Plex Mono",monospace; font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; padding:5px 10px; border-radius:3px; background:var(--panel-3); color:var(--ink-2)}
+.pill b{color:var(--ink)}
+
+.bars{display:grid; gap:7px; margin-top:18px}
+.bar{display:grid; grid-template-columns:52px 1fr 104px; gap:12px; align-items:center; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--ink-3)}
+.bar .track{height:9px; background:var(--panel-3); border-radius:2px; overflow:hidden}
+.bar .fill{height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-2)); width:0; transition:width .7s cubic-bezier(.22,1,.36,1)}
+.bar .amt{text-align:right; color:var(--ink); font-variant-numeric:tabular-nums}
+
+.chains{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:4px}
+.chain{border:1px solid var(--rule); border-radius:5px; padding:14px; background:var(--panel-2); transition:all .35s}
+.chain .n{font-weight:600; font-size:14px; text-transform:capitalize}
+.chain .s{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin-top:7px}
+.chain.ok{border-color:var(--good); background:var(--good-wash)}
+.chain.ok .s{color:var(--good)}
+.chain.no{border-color:var(--bad); background:var(--bad-wash)}
+.chain.no .s{color:var(--bad)}
+.chain.live{border-color:var(--accent); background:var(--accent-wash)}
+.chain.live .s{color:var(--accent)}
+
+#log{max-height:520px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; font-size:13.5px}
+.ln{display:grid; grid-template-columns:20px 1fr auto; gap:10px; padding:7px 4px; border-radius:3px; align-items:baseline; animation:slide .28s ease}
+@keyframes slide{from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:none}}
+.ln .g{font-family:"IBM Plex Mono",monospace; font-size:13px}
+.ln .t{font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink-3); white-space:nowrap}
+.ln.ok .g{color:var(--good)} .ln.no .g{color:var(--bad)} .ln.info .g{color:var(--accent)}
+.ln.note{color:var(--ink-3); font-size:12.5px; padding-left:34px; grid-template-columns:1fr}
+.ln.act{margin-top:16px; padding:10px 4px 8px; border-top:1px solid var(--rule); font-weight:700; letter-spacing:-.01em}
+.ln.act .g{color:var(--accent)}
+.ln .reason{color:var(--ink-2)}
+
+.reasons{margin-top:12px; display:grid; gap:5px}
+.reason-item{font-size:12.5px; color:var(--ink-2); padding-left:14px; border-left:2px solid var(--rule); line-height:1.5}
+
+.stat{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:4px}
+.stat div{background:var(--panel-2); border:1px solid var(--rule); border-radius:5px; padding:14px}
+.stat .v{font-weight:700; font-size:1.5rem; letter-spacing:-.03em; font-variant-numeric:tabular-nums}
+.stat .v.accent{color:var(--accent)}
+.stat .l{font-family:"IBM Plex Mono",monospace; font-size:9.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); margin-top:7px; line-height:1.4}
+
+.banner{margin-top:16px; border:1px solid var(--warn); background:var(--warn-wash); border-radius:5px; padding:13px 16px; font-size:12.5px; color:var(--ink-2); line-height:1.55}
+.banner b{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="brand">Byzantium<span>.</span></div>
+      <div class="did mono" id="did">no agent yet</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="reset">Reset</button>
+    <button id="run">Run walkthrough</button>
+  </header>
+
+  <div class="grid top">
+    <div class="card">
+      <h2>Current limit</h2>
+      <div class="limitrow">
+        <div class="limit" id="limit">$0.00</div>
+        <div class="delta mono" id="delta"></div>
+      </div>
+      <div class="pills">
+        <div class="pill">score <b id="score">0</b></div>
+        <div class="pill">band <b id="band">—</b></div>
+        <div class="pill">settled <b id="settled">0</b></div>
+      </div>
+      <div class="bars" id="bars"></div>
+    </div>
+
+    <div class="card">
+      <h2>Chains</h2>
+      <div class="chains">
+        <div class="chain" id="c-base"><div class="n">base</div><div class="s">idle</div></div>
+        <div class="chain" id="c-solana"><div class="n">solana</div><div class="s">never used</div></div>
+        <div class="chain" id="c-ethereum"><div class="n">ethereum</div><div class="s">out of scope</div></div>
+      </div>
+      <h2 style="margin-top:22px">Why this limit</h2>
+      <div class="reasons" id="reasons">
+        <div class="reason-item">Run the walkthrough to see every control that shaped the number.</div>
+      </div>
+      <div class="stat" style="margin-top:18px">
+        <div><div class="v accent" id="t-cross">—</div><div class="l">ms to trust a new chain</div></div>
+        <div><div class="v" id="t-revoke">—</div><div class="l">ms to revoke</div></div>
+        <div><div class="v" id="t-blocked">0</div><div class="l">attacks refused</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>Live event log</h2>
+    <div id="log"></div>
+    <div class="banner">
+      <b>What is real here:</b> every line is a live HTTP call to the Byzantium gateway running on
+      this machine — real ML-DSA signatures, real underwriting, real refusals. The payments
+      themselves are settlement events reported to Byzantium rather than broadcast blockchain
+      transactions. Byzantium never moves money by design; it authorises and verifies what an
+      agent's own wallet does.
+    </div>
+  </div>
+</div>
+
+<script>
+const API = location.origin;
+const KEY = new URLSearchParams(location.search).get('key') || 'demo-key';
+const HOME = 'base', NEW_CHAIN = 'solana', OUT = 'ethereum';
+
+const $ = id => document.getElementById(id);
+const money = m => '$' + (m / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+let t0 = 0, blocked = 0, rows = [];
+
+function log(kind, text, ms) {
+  const el = document.createElement('div');
+  el.className = 'ln ' + kind;
+  const glyph = {ok: '✓', no: '✗', info: '▸', act: '§'}[kind] || '·';
+  if (kind === 'note') {
+    el.innerHTML = `<div class="reason">${text}</div>`;
+  } else {
+    el.innerHTML = `<div class="g">${glyph}</div><div>${text}</div>` +
+                   `<div class="t">${ms != null ? ms + ' ms' : ((performance.now() - t0) / 1000).toFixed(1) + 's'}</div>`;
+  }
+  $('log').appendChild(el);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+async function api(path, body) {
+  const started = performance.now();
+  const r = await fetch(API + path, {
+    method: 'POST',
+    headers: {'content-type': 'application/json', authorization: 'Bearer ' + KEY},
+    body: JSON.stringify(body),
+  });
+  const json = await r.json().catch(() => ({}));
+  return {json, ms: Math.round(performance.now() - started), status: r.status};
+}
+
+function setChain(id, cls, label) {
+  const el = $('c-' + id);
+  el.className = 'chain ' + cls;
+  el.querySelector('.s').textContent = label;
+}
+
+function setLimit(v, prev) {
+  $('limit').textContent = money(v);
+  if (prev != null && v > prev) {
+    $('limit').classList.add('up');
+    $('delta').textContent = '+' + money(v - prev);
+    $('delta').classList.add('show');
+    setTimeout(() => $('limit').classList.remove('up'), 900);
+  }
+}
+
+function drawBars() {
+  const max = Math.max(...rows.map(r => r.limit), 1);
+  $('bars').innerHTML = rows.map(r =>
+    `<div class="bar"><span>rd ${r.round}</span>` +
+    `<span class="track"><span class="fill" style="width:${(r.limit / max * 100).toFixed(1)}%"></span></span>` +
+    `<span class="amt">${money(r.limit)}</span></div>`
+  ).join('');
+}
+
+function showReasons(list) {
+  $('reasons').innerHTML = (list || []).map(r => `<div class="reason-item">${r}</div>`).join('')
+    || '<div class="reason-item">—</div>';
+}
+
+function reset() {
+  rows = []; blocked = 0;
+  $('log').innerHTML = ''; $('bars').innerHTML = '';
+  setLimit(0); $('delta').classList.remove('show');
+  $('score').textContent = '0'; $('band').textContent = '—'; $('settled').textContent = '0';
+  $('t-cross').textContent = '—'; $('t-revoke').textContent = '—'; $('t-blocked').textContent = '0';
+  setChain('base', '', 'idle');
+  setChain('solana', '', 'never used');
+  setChain('ethereum', '', 'out of scope');
+  showReasons(null);
+  $('did').textContent = 'no agent yet';
+}
+$('reset').onclick = reset;
+
+$('run').onclick = async () => {
+  reset();
+  $('run').disabled = true;
+  t0 = performance.now();
+
+  const agent = 'did:byz:trader-' + Math.random().toString(16).slice(2, 10);
+  $('did').textContent = agent;
+  let settled = 0;
+
+  try {
+    // ── ACT 1 ────────────────────────────────────────────────────────────
+    log('act', 'Act 1 — a new agent is refused, and told why');
+
+    const denied = await api('/v1/limits/issue', {agent_did: agent, ccy: 'USD'});
+    log('no', 'Refused: ' + (denied.json.error || 'no verified business behind this agent'), denied.ms);
+    log('note', 'Identity is a gate. Nothing is underwritten without a verified business.');
+    await sleep(500);
+
+    const bind = await api('/v1/principals', {
+      agent_did: agent, principal_ref: 'sha256:acme-treasury',
+      kyc_tier: 'institutional', sanctions_clear: true,
+      jurisdiction: 'SG', entity_age_days: 900,
+    });
+    log('ok', 'Bound to an already-verified business — no fresh KYC run', bind.ms);
+    await sleep(400);
+
+    const scope = {
+      agent_did: agent, ccy: 'USD', chains: [HOME, NEW_CHAIN],
+      asset_classes: ['stablecoin'], action_types: ['payment'],
+    };
+    let issued = await api('/v1/limits/issue', scope);
+    let att = issued.json.attestation;
+    let limit = att.lim_window.minor_units;
+    const first = limit;
+
+    setLimit(limit);
+    $('score').textContent = issued.json.score;
+    $('band').textContent = issued.json.tier;
+    showReasons(issued.json.reasons);
+    rows.push({round: 0, limit}); drawBars();
+    log('ok', `First limit issued: <b>${money(limit)}</b> — score ${issued.json.score}, band ${issued.json.tier}`, issued.ms);
+    log('note', 'It comes from the verified business, not from any history. A new agent scores zero.');
+    await sleep(700);
+
+    // ── ACT 2 ────────────────────────────────────────────────────────────
+    log('act', 'Act 2 — it earns standing, and the limit climbs');
+    setChain('base', 'live', 'settling');
+
+    for (let round = 1; round <= 5; round++) {
+      const draw = Math.floor(att.lim_single.minor_units * 0.85);
+      for (let i = 0; i < 8; i++) {
+        const v = await api('/v1/limits/verify', {
+          attestation: att,
+          draw: {amount_minor: draw, currency: 'USD', asset_class: 'stablecoin',
+                 chain: HOME, action_type: 'payment'},
+        });
+        if (v.json.permitted) {
+          await api('/v1/limits/settle', {
+            agent_did: agent, amount_minor: v.json.effective_minor,
+            currency: 'USD', settled: true,
+          });
+          settled++; $('settled').textContent = settled;
+        }
+      }
+
+      const prev = limit;
+      issued = await api('/v1/limits/issue', scope);
+      att = issued.json.attestation;
+      limit = att.lim_window.minor_units;
+
+      setLimit(limit, prev);
+      $('score').textContent = issued.json.score;
+      $('band').textContent = issued.json.tier;
+      showReasons(issued.json.reasons);
+      rows.push({round, limit}); drawBars();
+      log('ok', `Round ${round}: 8 payments settled · score ${issued.json.score} (${issued.json.tier}) · limit <b>${money(prev)} → ${money(limit)}</b>`, issued.ms);
+      await sleep(420);
+    }
+    log('note', 'Growth is capped each round. A flawless run still cannot reach the ceiling quickly — that is what stops a clean history being farmed and then drained.');
+    setChain('base', 'ok', settled + ' settled');
+    await sleep(700);
+
+    // ── ACT 3 ────────────────────────────────────────────────────────────
+    log('act', 'Act 3 — the same credential on a chain it has never touched');
+    log('info', `This agent has settled ${settled} payments, every one on ${HOME}. It has no account, no history and no relationship on ${NEW_CHAIN}.`);
+    setChain('solana', 'live', 'presenting…');
+    await sleep(800);
+
+    const probe = Math.floor(att.lim_single.minor_units * 0.5);
+    const cross = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: probe, currency: 'USD', asset_class: 'stablecoin',
+             chain: NEW_CHAIN, action_type: 'payment'},
+    });
+
+    if (cross.json.permitted) {
+      setChain('solana', 'ok', 'authorised');
+      $('t-cross').textContent = cross.ms;
+      log('ok', `Authorised for <b>${money(probe)}</b> on ${NEW_CHAIN}`, cross.ms);
+      log('note', 'On every other system available today, this agent starts at zero here.');
+      await api('/v1/limits/settle', {agent_did: agent, amount_minor: cross.json.effective_minor, currency: 'USD', settled: true});
+      settled++; $('settled').textContent = settled;
+    } else {
+      setChain('solana', 'no', 'refused');
+      log('no', 'Refused: ' + cross.json.refusal, cross.ms);
+    }
+    await sleep(600);
+
+    const oos = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: 100, currency: 'USD', asset_class: 'stablecoin',
+             chain: OUT, action_type: 'payment'},
+    });
+    setChain('ethereum', 'no', 'refused');
+    log('no', 'Refused: ' + (oos.json.refusal || 'chain not in scope'), oos.ms);
+    await sleep(400);
+
+    const sgd = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: 13400, currency: 'SGD', asset_class: 'stablecoin',
+             chain: NEW_CHAIN, action_type: 'payment'},
+    });
+    log('ok', `S$134.00 counted as <b>${money(sgd.json.effective_minor)}</b> against the same budget, volatility haircut applied`, sgd.ms);
+    log('note', 'One budget, whichever chain or currency the agent spends in.');
+    await sleep(700);
+
+    // ── ACT 4 ────────────────────────────────────────────────────────────
+    log('act', 'Act 4 — the abuse controls, pushed');
+
+    const drain = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: limit, currency: 'USD', asset_class: 'stablecoin',
+             chain: HOME, action_type: 'payment'},
+    });
+    log('no', 'Drain the whole limit in one go — ' + (drain.json.refusal || 'refused'), drain.ms);
+    blocked++; await sleep(400);
+
+    const tampered = JSON.parse(JSON.stringify(att));
+    tampered.lim_single.minor_units = limit * 100;
+    tampered.lim_window.minor_units = limit * 100;
+    const forge = await api('/v1/limits/verify', {
+      attestation: tampered,
+      draw: {amount_minor: 1000, currency: 'USD', asset_class: 'stablecoin',
+             chain: HOME, action_type: 'payment'},
+    });
+    log('no', 'Inflate the limit inside the credential — ' + (forge.json.error || 'signature no longer valid'), forge.ms);
+    log('note', 'The limit is inside the signature. Change the number and it stops verifying.');
+    blocked++; $('t-blocked').textContent = blocked;
+    await sleep(700);
+
+    // ── ACT 5 ────────────────────────────────────────────────────────────
+    log('act', 'Act 5 — a payment fails, and the evidence survives');
+    const auth = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: probe, currency: 'USD', asset_class: 'stablecoin',
+             chain: HOME, action_type: 'payment'},
+    });
+    log('ok', `Authorised — <b>${money(auth.json.effective_minor)}</b> reserved but not yet settled`, auth.ms);
+    const failed = await api('/v1/limits/settle', {
+      agent_did: agent, amount_minor: auth.json.effective_minor, currency: 'USD', settled: false,
+    });
+    log('ok', `Reported as failed — reservation released, ${money(failed.json.window_used_minor)} consumed this window`, failed.ms);
+    log('note', 'A failed payment releases the reservation instead of consuming the budget.');
+    await sleep(700);
+
+    // ── ACT 6 ────────────────────────────────────────────────────────────
+    log('act', 'Act 6 — the agent is compromised');
+    const rev = await api('/v1/limits/revoke', {agent_did: agent});
+    $('t-revoke').textContent = rev.ms;
+    log('ok', 'Every outstanding credential for this agent revoked', rev.ms);
+
+    const after = await api('/v1/limits/verify', {
+      attestation: att,
+      draw: {amount_minor: 100, currency: 'USD', asset_class: 'stablecoin',
+             chain: HOME, action_type: 'payment'},
+    });
+    log('no', 'The same credential, one second later — ' + (after.json.error || 'revoked'), after.ms);
+    setChain('base', 'no', 'revoked');
+    setChain('solana', 'no', 'revoked');
+    blocked++; $('t-blocked').textContent = blocked;
+
+    log('act', `Done — ${money(first)} → ${money(limit)} over ${settled} settled payments, honoured on a new chain in ${$('t-cross').textContent} ms, revoked everywhere in ${rev.ms} ms`);
+  } catch (e) {
+    log('no', 'Demo stopped: ' + e.message);
+  } finally {
+    $('run').disabled = false;
+  }
+};
+</script>
+</body>
+</html>

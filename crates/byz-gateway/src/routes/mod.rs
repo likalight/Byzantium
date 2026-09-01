@@ -75,13 +75,30 @@ pub fn router(state: AppState) -> Router {
     // Public routes — no auth, no rate limit
     let public = Router::new()
         .route("/health", get(health))
-        .route("/metrics", get(metrics));
+        .route("/metrics", get(metrics))
+        // Served from the gateway itself so it is same-origin: a page opened from
+        // the filesystem could not call these endpoints without CORS.
+        .route("/demo", get(demo_page));
 
     Router::new()
         .merge(protected)
         .merge(public)
         .layer(middleware::from_fn(propagate_request_id))
         .with_state(state)
+}
+
+/// A watchable walkthrough of the whole system, for showing someone.
+///
+/// It drives the same endpoints an integrator would, from the browser, so what is
+/// on screen is the real gateway answering rather than a recording.
+async fn demo_page() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        include_str!("../demo.html"),
+    )
+        .into_response()
 }
 
 async fn health(

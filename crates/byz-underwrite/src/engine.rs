@@ -44,6 +44,15 @@ pub struct UnderwritingConfig {
     pub min_absolute_step_minor: u64,
     /// A limit may not exceed this multiple of the largest single completed
     /// action. Zero disables the check.
+    ///
+    /// This interacts with [`Underwriter::single_share_bps`], and the interaction
+    /// is load-bearing. A single draw is capped at a fraction of the window, so
+    /// the largest action an agent can complete is itself bounded by its current
+    /// limit. If `experience_multiple * single_share` comes to 1.0, the cap lands
+    /// exactly on the current window and the limit can never grow — the agent
+    /// sits at its cold-start floor forever, however well it behaves. The product
+    /// must leave headroom above 1.0 at the *lowest* band, where the share is
+    /// smallest.
     pub experience_multiple: u64,
     /// Rolling exposure window.
     pub window_secs: u64,
@@ -60,7 +69,11 @@ impl Default for UnderwritingConfig {
             max_increase_bps: 5_000,
             // 500.00 in the unit of account.
             min_absolute_step_minor: 50_000,
-            experience_multiple: 10,
+            // 20x the 10% single-draw share at the lowest band leaves 2x of
+            // headroom, so a limit can grow while still never running far ahead
+            // of what the agent has actually completed. How fast it grows is
+            // governed by the per-window rate cap, not by this.
+            experience_multiple: 20,
             window_secs: 30 * 24 * 60 * 60,
             attestation_ttl_secs: 3_600,
             min_score_to_earn: 50,
@@ -598,7 +611,7 @@ mod tests {
         let floor = KycTier::Institutional
             .cold_start_floor(Currency::Usd)
             .minor_units;
-        let bound = (largest * 10).max(floor);
+        let bound = (largest * Underwriter::default().config().experience_multiple).max(floor);
         assert!(
             d.lim_window.minor_units <= bound,
             "limit {} exceeded the experience bound {}",
@@ -757,6 +770,75 @@ mod tests {
         let explanation = d.explain();
         assert!(!explanation.is_empty());
         assert!(explanation.iter().any(|r| r.contains("earned")));
+    }
+
+    #[test]
+    fn a_cold_start_agent_can_actually_grow() {
+        // The closed loop no unit test previously covered: the limit bounds the
+        // largest draw, the largest draw feeds the experience cap, and the
+        // experience cap bounds the limit. If `experience_multiple` times the
+        // single-draw share is 1.0 that loop is a deadlock, and an agent stays on
+        // its cold-start floor forever no matter how well it behaves. A live
+        // walkthrough caught this; these two tests keep it caught.
+        let did = AgentDid::new("did:byz:grower");
+        let uw = Underwriter::default();
+        let mut svc = ReputationService::new(400);
+        svc.bind_principal(&did, "sha256:prn");
+
+        let mut previous: Option<PreviousLimit> = None;
+        let first = KycTier::Institutional
+            .cold_start_floor(Currency::Usd)
+            .minor_units;
+        let mut limit = first;
+        let now = Utc::now();
+        let mut clock = 0i64;
+
+        for _ in 0..5 {
+            let d = uw.underwrite(&input(
+                &did,
+                svc.detail(&did),
+                standing(KycTier::Institutional, 1),
+                previous.clone(),
+            ));
+            assert!(d.is_issued());
+            limit = d.lim_window.minor_units;
+
+            // Settle a realistic batch at the largest draw this limit allows.
+            let draw = d.lim_single.minor_units;
+            for _ in 0..8 {
+                clock += 1;
+                svc.ingest(
+                    ScoringEvent::new(did.clone(), ReceiptOutcome::Success, false)
+                        .with_amount(Money::usd_cents(draw))
+                        .with_counterparty(format!("cp-{}", clock % 20))
+                        .at(now - Duration::minutes(clock)),
+                );
+            }
+            previous = Some(PreviousLimit {
+                lim_window: d.lim_window,
+                issued_at: now,
+            });
+        }
+
+        assert!(
+            limit > first,
+            "limit never moved off the cold-start floor of {first} after five clean rounds"
+        );
+    }
+
+    #[test]
+    fn the_experience_cap_leaves_headroom_at_every_band() {
+        // Guards the invariant directly, so a later tweak to either number cannot
+        // silently reintroduce the deadlock.
+        let uw = Underwriter::default();
+        for tier in [RiskTier::D3, RiskTier::C1, RiskTier::B1, RiskTier::A1] {
+            let share = Underwriter::single_share_bps(tier) as u64;
+            let product = uw.config().experience_multiple * share;
+            assert!(
+                product > 10_000,
+                "{tier:?}: experience_multiple x single share is {product} bps, which pins the limit at its current value forever"
+            );
+        }
     }
 
     #[test]

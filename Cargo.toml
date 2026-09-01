@@ -20,6 +20,7 @@ members = [
     "crates/byz-rail-eip3009",
     "crates/byz-rail-solana",
     "crates/byz-sdk",
+    "crates/byz-demo",
     "crates/byz-billing",
 ]
 resolver = "2"

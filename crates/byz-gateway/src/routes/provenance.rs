@@ -95,9 +95,27 @@ pub async fn submit_provenance(
     State(state): State<AppState>,
     Json(req): Json<SubmitProvenanceRequest>,
 ) -> Result<Json<SubmitProvenanceResponse>, ApiError> {
+    // Everything this agent has already had accepted, so a resubmitted batch is
+    // rejected as replay rather than counted a second time. A verifier is created
+    // per request and knows nothing on its own.
+    let already: Vec<(uuid::Uuid, u64)> = state
+        .provenance
+        .read()
+        .await
+        .get(req.agent_did.as_str())
+        .map(|v| {
+            v.iter()
+                .map(|s| (s.event.session_id, s.event.seq))
+                .collect()
+        })
+        .unwrap_or_default();
+
     let (verified, rejections) = {
         let registry = state.runtimes.read().await;
         let mut verifier = ProvenanceVerifier::new(&registry, req.agent_did.clone());
+        for (session, seq) in already {
+            verifier.seed_seen(session, seq);
+        }
         verifier.verify_batch(&req.events)
     };
 

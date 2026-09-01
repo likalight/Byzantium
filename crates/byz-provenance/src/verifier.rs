@@ -136,6 +136,21 @@ impl<'a> ProvenanceVerifier<'a> {
         }
     }
 
+    /// Mark a `(session, seq)` as already accepted.
+    ///
+    /// A verifier only knows about the events it has seen, and one is created per
+    /// request. Without seeding it from what was accepted earlier, replay
+    /// defence would hold only *within* a single batch — an attacker would simply
+    /// resubmit the same signed events in a second request and have them counted
+    /// twice. The gateway seeds this from stored provenance before verifying.
+    pub fn seed_seen(&mut self, session_id: Uuid, seq: u64) {
+        self.seen.insert((session_id, seq));
+        let entry = self.last_seq.entry(session_id).or_insert(seq);
+        if seq > *entry {
+            *entry = seq;
+        }
+    }
+
     /// Verify one event. Order matters: callers should submit in sequence order
     /// within a session.
     pub fn verify(
@@ -331,6 +346,46 @@ mod tests {
             v.verify(&e).unwrap_err(),
             RejectionReason::DuplicateSequence { .. }
         ));
+    }
+
+    #[test]
+    fn replay_across_separate_batches_is_rejected() {
+        // The case a live walkthrough caught: a fresh verifier per request means
+        // per-batch replay defence is no defence at all.
+        let kp = DilithiumKeypair::generate();
+        let mut reg = RuntimeRegistry::new();
+        reg.register("runtime-1", kp.public_key.clone());
+        let did = AgentDid::new("did:byz:a");
+        let session = Uuid::new_v4();
+        let event = signed_by(&kp, "runtime-1", &did, session, 4);
+
+        // First request.
+        let mut first = ProvenanceVerifier::new(&reg, did.clone());
+        assert!(first.verify(&event).is_ok());
+
+        // Second request, new verifier, seeded from what was already accepted.
+        let mut second = ProvenanceVerifier::new(&reg, did.clone());
+        second.seed_seen(session, 4);
+        assert!(matches!(
+            second.verify(&event).unwrap_err(),
+            RejectionReason::DuplicateSequence { .. }
+        ));
+    }
+
+    #[test]
+    fn seeding_also_restores_monotonicity() {
+        let kp = DilithiumKeypair::generate();
+        let mut reg = RuntimeRegistry::new();
+        reg.register("runtime-1", kp.public_key.clone());
+        let did = AgentDid::new("did:byz:a");
+        let session = Uuid::new_v4();
+
+        let mut v = ProvenanceVerifier::new(&reg, did.clone());
+        v.seed_seen(session, 10);
+        let err = v
+            .verify(&signed_by(&kp, "runtime-1", &did, session, 6))
+            .unwrap_err();
+        assert!(matches!(err, RejectionReason::NonMonotonicSequence { .. }));
     }
 
     #[test]

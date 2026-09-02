@@ -647,6 +647,401 @@ paths:
 
   # ── Observability ─────────────────────────────────────────────────────────────
 
+  # ── Underwriting ───────────────────────────────────────────────────────────
+
+  /v1/principals:
+    post:
+      tags: [Underwriting]
+      summary: Bind an agent to a KYC-verified principal
+      description: >
+        Nothing is underwritten before this. Standing is a gate rather than a
+        score: a verified principal raises the ceiling an agent may eventually
+        reach, but never earns the limit on its own. Limits also consolidate at
+        the principal, so registering more agents divides a ceiling instead of
+        multiplying it.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_did, principal_ref, kyc_tier, sanctions_clear]
+              properties:
+                agent_did: { type: string, example: "did:byz:trader-01" }
+                principal_ref:
+                  type: string
+                  description: Pseudonymous reference to the principal, never raw identity.
+                  example: "sha256:acme-treasury"
+                kyc_tier:
+                  type: string
+                  enum: [unverified, basic, verified, institutional]
+                sanctions_clear: { type: boolean }
+                jurisdiction: { type: string, example: "SG" }
+                entity_age_days: { type: integer, example: 900 }
+      responses:
+        "200":
+          description: Bound
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_did: { type: string }
+                  principal_ref: { type: string }
+                  kyc_tier: { type: string }
+                  eligible: { type: boolean }
+                  agents_under_principal: { type: integer }
+        "400": { description: principal_ref missing }
+
+  /v1/limits/issue:
+    post:
+      tags: [Underwriting]
+      summary: Underwrite the agent and issue a portable limit
+      description: >
+        Runs the five controls — standing gate, sublinear growth in settled
+        value, experience cap, per-window rate cap, principal consolidation —
+        and returns a signed attestation. `reasons` lists every control that
+        shaped the number, on an approval as well as a refusal.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_did]
+              properties:
+                agent_did: { type: string }
+                ccy:
+                  type: string
+                  enum: [USD, SGD, EUR, GBP, JPY]
+                  default: USD
+                chains:
+                  type: array
+                  items: { type: string }
+                  description: Chains this limit may be presented on. Empty means any.
+                  example: ["base", "solana"]
+                asset_classes:
+                  type: array
+                  items: { type: string, enum: [stablecoin, major_fiat, volatile] }
+                counterparty_classes:
+                  type: array
+                  items: { type: string }
+                action_types:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Decision. `issued` is false on a refusal, with `refusal` explaining why.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issued: { type: boolean }
+                  attestation:
+                    $ref: "#/components/schemas/LimitAttestation"
+                  tier: { type: string, example: "B2" }
+                  score: { type: integer, example: 481 }
+                  reasons:
+                    type: array
+                    items: { type: string }
+                  refusal: { type: string }
+        "400": { description: No registered principal for this agent }
+
+  /v1/limits/verify:
+    post:
+      tags: [Underwriting]
+      summary: Authorise one draw against a presented limit
+      description: >
+        The authorisation path. Verifies the signature, checks the credential has
+        not been revoked, converts the amount into the attestation's unit of
+        account, applies the asset-class haircut, and nets the result against
+        exposure recorded across every chain this agent operates on.
+
+
+        This cannot be done offline: the credential states the ceiling, but only
+        the issuer knows how much of it remains, because an agent may be drawing
+        on several chains at once and no single venue sees the others.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attestation, draw]
+              properties:
+                attestation:
+                  $ref: "#/components/schemas/LimitAttestation"
+                draw:
+                  type: object
+                  required: [amount_minor, currency, asset_class, chain, action_type]
+                  properties:
+                    amount_minor:
+                      type: integer
+                      description: Amount in minor units of `currency`.
+                    currency: { type: string, enum: [USD, SGD, EUR, GBP, JPY] }
+                    asset_class: { type: string, enum: [stablecoin, major_fiat, volatile] }
+                    chain: { type: string, example: "solana" }
+                    action_type: { type: string, example: "payment" }
+                    counterparty_class: { type: string }
+                idempotency_key:
+                  type: string
+                  description: >
+                    Supply this and a retry returns the original answer rather
+                    than committing the exposure a second time.
+      responses:
+        "200":
+          description: Decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permitted: { type: boolean }
+                  effective_minor:
+                    type: integer
+                    description: The draw in the attestation's unit of account, after the haircut.
+                  effective_ccy: { type: string }
+                  window_used_minor: { type: integer }
+                  fee_minor: { type: integer }
+                  refusal: { type: string }
+        "401": { description: Signature invalid, expired, or the credential is revoked }
+
+  /v1/limits/settle:
+    post:
+      tags: [Underwriting]
+      summary: Resolve a committed draw
+      description: >
+        Settling consumes window capacity; reporting a failure releases the
+        reservation instead. Either outcome reaches the scorer, which is what
+        closes the feedback loop between behaviour and future limits.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_did, amount_minor, currency, settled]
+              properties:
+                agent_did: { type: string }
+                amount_minor: { type: integer }
+                currency: { type: string, enum: [USD, SGD, EUR, GBP, JPY] }
+                settled:
+                  type: boolean
+                  description: False releases the reservation rather than consuming the window.
+                idempotency_key: { type: string }
+      responses:
+        "200":
+          description: Current exposure after the update
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_did: { type: string }
+                  settled: { type: boolean }
+                  at_risk_minor: { type: integer }
+                  window_used_minor: { type: integer }
+
+  /v1/limits/revoke:
+    post:
+      tags: [Underwriting]
+      summary: Kill outstanding credentials for an agent or a principal
+      description: >
+        Revocation is a per-subject cutoff rather than a list of credential ids:
+        everything issued before the cutoff stops being honoured. A future
+        `effective_from` schedules the revocation instead of invalidating
+        credentials that are in flight right now.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_did: { type: string }
+                principal_ref:
+                  type: string
+                  description: Revokes every agent under this principal at once.
+                effective_from: { type: string, format: date-time }
+      responses:
+        "200": { description: Cutoff recorded }
+        "400": { description: One of agent_did or principal_ref is required }
+
+  # ── Provenance ─────────────────────────────────────────────────────────────
+
+  /v1/runtimes:
+    post:
+      tags: [Provenance]
+      summary: Register a trusted runtime signing key
+      description: >
+        The trust root for all execution evidence. A runtime key signs traces at
+        the point of execution, and the agent must not hold it — an agent
+        attesting to its own behaviour is a claim, not evidence.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runtime_id, public_key_hex]
+              properties:
+                runtime_id: { type: string, example: "runtime-acme-prod" }
+                public_key_hex:
+                  type: string
+                  description: ML-DSA (Dilithium3) public key, hex-encoded.
+      responses:
+        "200": { description: Registered }
+        "400": { description: Public key is unreadable }
+
+  /v1/runtimes/revoke:
+    post:
+      tags: [Provenance]
+      summary: Revoke a runtime signing key
+      description: >
+        Evidence already accepted while the key was live stays explainable; new
+        submissions signed by it are refused.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runtime_id]
+              properties:
+                runtime_id: { type: string }
+      responses:
+        "200": { description: Revoked }
+
+  /v1/provenance:
+    post:
+      tags: [Provenance]
+      summary: Submit runtime-signed execution traces
+      description: >
+        Events that fail verification are reported in `rejections` rather than
+        silently dropped: a falling `acceptance_rate_bps` almost always means a
+        misconfigured runtime rather than a misbehaving agent. Unsigned or
+        unverifiable events are ignored outright, never partially credited.
+
+
+        Events commit to a hash of their payload; the payload itself never
+        leaves the operator.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent_did, events]
+              properties:
+                agent_did: { type: string }
+                events:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      event:
+                        type: object
+                        properties:
+                          agent_did: { type: string }
+                          session_id: { type: string, format: uuid }
+                          seq:
+                            type: integer
+                            description: Strictly increasing within a session. Gaps backwards and repeats are refused as replay.
+                          kind:
+                            type: string
+                            enum: [tool_call, plan, memory_write, human_approval, observation, payment_intent]
+                          at: { type: string, format: date-time }
+                          payload_hash: { type: string, example: "sha256:1b7a…" }
+                          label: { type: string }
+                          ok: { type: boolean }
+                      runtime_id: { type: string }
+                      signature:
+                        type: array
+                        items: { type: integer }
+      responses:
+        "200":
+          description: What was accepted, and why the rest was not
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: { type: integer }
+                  rejected: { type: integer }
+                  rejections:
+                    type: array
+                    items: { type: string }
+                  acceptance_rate_bps: { type: integer }
+                  evidence_ref:
+                    type: string
+                    description: Merkle commitment over everything accepted for this agent.
+                  weighted_total: { type: integer }
+                  human_approvals: { type: integer }
+
+  /v1/provenance/{did}:
+    get:
+      tags: [Provenance]
+      summary: Evidence commitment and summary for an agent
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Commitment and statistics }
+
+  # ── Public ─────────────────────────────────────────────────────────────────
+
+  /v1/issuer-keys:
+    get:
+      tags: [Public]
+      summary: Public keys this issuer signs with
+      description: >
+        No authentication: a relying party needs these to verify an attestation,
+        and requiring a prior key exchange would defeat the point of a portable
+        credential. Retired keys stay listed until everything they signed has
+        expired, because dropping one while credentials are in flight would
+        invalidate them.
+      responses:
+        "200":
+          description: Active and recently retired keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer: { type: string, example: "did:web:byzantium" }
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kid: { type: string }
+                        public_key_hex: { type: string }
+                        alg: { type: string, example: "ml-dsa-65" }
+                        status: { type: string, enum: [active, retired] }
+                        since: { type: string, format: date-time }
+
+  /demo:
+    get:
+      tags: [Public]
+      summary: A watchable walkthrough of the system
+      description: >
+        Served from the gateway so it is same-origin and can call these endpoints
+        without CORS. Drives the real API — nothing on screen is a recording.
+      responses:
+        "200": { description: HTML page }
+
   /health:
     get:
       tags: [Observability]
@@ -831,6 +1226,62 @@ components:
             error: "database not available"
 
   schemas:
+    LimitAttestation:
+      type: object
+      description: >
+        The portable credential. Short-lived by design: revocation is normally a
+        matter of declining to reissue, because per-credential revocation lists
+        are the part of every credential system that fails in production.
+      properties:
+        sub: { type: string, description: Agent DID this limit belongs to. }
+        prn: { type: string, description: Pseudonymous principal reference. }
+        iss: { type: string, example: "did:web:byzantium" }
+        tier: { type: string, example: "B2" }
+        lim_single: { $ref: "#/components/schemas/Money" }
+        lim_window: { $ref: "#/components/schemas/Money" }
+        window_secs: { type: integer }
+        ccy: { type: string, enum: [USD, SGD, EUR, GBP, JPY] }
+        scope:
+          type: object
+          properties:
+            chains: { type: array, items: { type: string } }
+            asset_classes: { type: array, items: { type: string } }
+            counterparty_classes: { type: array, items: { type: string } }
+            action_types: { type: array, items: { type: string } }
+        fee_bps: { type: integer }
+        collateral_bps: { type: integer }
+        nbf: { type: string, format: date-time }
+        exp: { type: string, format: date-time }
+        ev:
+          type: string
+          description: >
+            Hash of the evidence behind this decision, never the evidence.
+            A dispute is settled with an inclusion proof for the specific event.
+        mandate_hash: { type: string }
+        guarantee:
+          type: object
+          nullable: true
+          description: Who bears the loss if this limit turns out to be wrong.
+          properties:
+            model: { type: string, enum: [bureau, underwritten] }
+            guarantor: { type: string }
+            covered: { $ref: "#/components/schemas/Money" }
+        collateral_required:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Money" }]
+        signature: { type: array, items: { type: integer } }
+        issuer_pubkey: { type: string }
+
+    Money:
+      type: object
+      description: >
+        An amount in minor units of a currency. Integer-only: limits and exposure
+        must never accumulate floating point error, and currencies differ in
+        minor-unit scale — JPY has none.
+      properties:
+        minor_units: { type: integer }
+        currency: { type: string, enum: [USD, SGD, EUR, GBP, JPY] }
+
 
     # ── Enumerations ──────────────────────────────────────────────────────────
 

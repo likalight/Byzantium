@@ -100,6 +100,10 @@ async fn main() -> Result<()> {
             }
             tracing::info!("connected to persistent store (PostgreSQL + Redis + Neo4j)");
             state = state.with_store(store);
+            // Restore limits, revocations and exposure before serving. Without
+            // this the growth cap resets on every restart and killed
+            // credentials come back to life.
+            state.hydrate().await;
         }
         Err(e) => {
             tracing::warn!(

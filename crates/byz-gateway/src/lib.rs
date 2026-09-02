@@ -1,5 +1,8 @@
 pub mod circuit_breaker;
+pub mod hydrate;
+pub mod idempotency;
 pub mod jobs;
+pub mod keystore;
 pub mod metrics;
 pub mod middleware;
 pub mod routes;

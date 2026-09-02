@@ -1,0 +1,58 @@
+# cargo-audit configuration.
+#
+# Every entry below is an advisory we have looked at, decided is not reachable
+# in the way it is described, and written down why — with a date to revisit. An
+# ignore without a reason is just a silenced alarm, so each one names the path
+# that pulls the crate in and the condition that would make us act.
+#
+# Reviewed: 2026-09-02
+
+[advisories]
+ignore = [
+  # ── rsa 0.9.10 — Marvin timing sidechannel (no patched version exists) ─────
+  #
+  # Reached only through `sqlx-mysql`, which is present in Cargo.lock but never
+  # compiled: sqlx is declared with `default-features = false` and only the
+  # `postgres` feature, so no MySQL code path exists in any binary we ship.
+  # There is no fixed release upstream, so this cannot be resolved by a bump.
+  #
+  # Act if: MySQL support is ever enabled, or a patched `rsa` is released.
+  "RUSTSEC-2023-0071",
+
+  # ── h2 0.3.27 — unbounded empty DATA frames (denial of service) ────────────
+  #
+  # The public HTTP surface of the gateway is axum 0.7 on hyper 1.x, which
+  # resolves to a patched h2. The vulnerable 0.3 line enters only through
+  # `tonic 0.11` — used for OTLP trace export to our own collector and for the
+  # optional TEE sidecar — and through `reqwest 0.11` inside `ethers` and `sp1`.
+  # None of those accept connections from untrusted callers.
+  #
+  # `tonic 0.11` is pinned by `opentelemetry-otlp 0.15`.
+  # Act if: that chain moves to tonic 0.12+, or anything on h2 0.3 is exposed
+  # to untrusted traffic.
+  "RUSTSEC-2026-0258",
+
+  # ── ring 0.16.20 — AES functions may panic with overflow checks ────────────
+  #
+  # Enters only via `jsonwebtoken 8.3`. The panic requires overflow checking to
+  # be enabled, which release builds do not do. Everything that matters
+  # cryptographically here is elsewhere: TLS uses ring 0.17, and every signature
+  # in the system is ML-DSA via pqcrypto, not ring.
+  #
+  # Act if: jsonwebtoken can move to 9.x, or a debug-assertions build is
+  # deployed.
+  "RUSTSEC-2025-0009",
+]
+
+# Unmaintained and unsound advisories are reported but do not fail the build.
+#
+# This is a deliberate line, not an oversight. They are real signals worth
+# reading, but they describe crates going quiet rather than exploitable
+# defects, and gating a merge on an upstream maintainer's activity produces a
+# red build nobody can fix.
+#
+# One of them is genuinely on our risk register rather than dismissed:
+# `pqcrypto-dilithium` is flagged unmaintained, and every signature this system
+# produces depends on it. That is tracked in SECURITY.md with a migration path,
+# not silently accepted here.
+informational_warnings = []

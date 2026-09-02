@@ -78,13 +78,31 @@ pub fn router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         // Served from the gateway itself so it is same-origin: a page opened from
         // the filesystem could not call these endpoints without CORS.
-        .route("/demo", get(demo_page));
+        .route("/demo", get(demo_page))
+        // Relying parties need the issuer's public keys to verify an
+        // attestation, and needing a prior key exchange to do so would defeat
+        // the point of a portable credential.
+        .route("/v1/issuer-keys", get(issuer_keys));
 
     Router::new()
         .merge(protected)
         .merge(public)
         .layer(middleware::from_fn(propagate_request_id))
         .with_state(state)
+}
+
+/// The public keys this issuer signs with, plus recently retired ones.
+///
+/// Retired keys stay listed until everything they signed has expired, because
+/// dropping one while credentials are still in flight invalidates them.
+async fn issuer_keys(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> axum::Json<serde_json::Value> {
+    let ks = state.keystore.read().await;
+    axum::Json(serde_json::json!({
+        "issuer": "did:web:byzantium",
+        "keys": ks.published(),
+    }))
 }
 
 /// A watchable walkthrough of the whole system, for showing someone.

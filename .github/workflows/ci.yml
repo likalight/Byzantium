@@ -180,9 +180,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Run cargo-audit directly rather than through the action, so it honours
+      # audit.toml. Every ignore there is documented with the reachability
+      # analysis behind it and a condition for revisiting.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        run: cargo audit
 
   publish-sdk:
     name: Publish SDK to npm

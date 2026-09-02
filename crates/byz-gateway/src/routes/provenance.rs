@@ -43,6 +43,9 @@ pub async fn register_runtime(
         .write()
         .await
         .register(req.runtime_id.clone(), key);
+    state
+        .persist_runtime(&req.runtime_id, &req.public_key_hex)
+        .await;
 
     Ok(Json(json!({
         "runtime_id": req.runtime_id,
@@ -61,6 +64,7 @@ pub async fn revoke_runtime(
     Json(req): Json<RevokeRuntimeRequest>,
 ) -> Result<Json<Value>, ApiError> {
     state.runtimes.write().await.revoke(&req.runtime_id);
+    state.persist_runtime_revocation(&req.runtime_id).await;
     Ok(Json(
         json!({ "runtime_id": req.runtime_id, "revoked": true }),
     ))
@@ -119,6 +123,10 @@ pub async fn submit_provenance(
         verifier.verify_batch(&req.events)
     };
 
+    state
+        .metrics
+        .record_provenance(verified.len(), rejections.len());
+
     let rejection_text: Vec<String> = rejections.iter().map(|r| r.describe()).collect();
     let rejected_count = rejections.len();
 
@@ -130,6 +138,10 @@ pub async fn submit_provenance(
         entry.extend(verified.iter().map(|v| v.signed.clone()));
         entry.clone()
     };
+
+    for v in &verified {
+        state.persist_provenance(&v.signed).await;
+    }
 
     let rejected_total = {
         let mut counts = state.provenance_rejected.write().await;

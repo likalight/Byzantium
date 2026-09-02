@@ -2,7 +2,7 @@ pub mod dilithium;
 pub mod kyber;
 pub mod merkle;
 
-pub use dilithium::{DilithiumKeypair, DilithiumPublicKey, DilithiumSignature};
+pub use dilithium::{DilithiumKeypair, DilithiumPublicKey, DilithiumSecretKey, DilithiumSignature};
 pub use kyber::{KyberKeypair, KyberPublicKey};
 pub use merkle::{MerkleProof, MerkleTree};
 

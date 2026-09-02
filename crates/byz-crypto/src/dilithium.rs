@@ -40,6 +40,16 @@ impl DilithiumSecretKey {
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
+
+    pub fn to_hex(&self) -> String {
+        hex::encode(&self.0)
+    }
+
+    pub fn from_hex(s: &str) -> ByzResult<Self> {
+        let bytes = hex::decode(s)
+            .map_err(|e| ByzantiumError::Crypto(format!("invalid secret key hex: {e}")))?;
+        Ok(Self(bytes))
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -82,6 +92,23 @@ impl DilithiumKeypair {
         }
     }
 
+    /// Reconstruct a keypair from stored material.
+    ///
+    /// Needed because an issuer key that cannot survive a restart is not an
+    /// issuer key: every credential it ever signed becomes unverifiable the
+    /// moment the process dies.
+    pub fn from_parts(public_key: DilithiumPublicKey, secret_key: DilithiumSecretKey) -> Self {
+        Self {
+            public_key,
+            secret_key,
+        }
+    }
+
+    /// The private half, for persisting. Handle accordingly.
+    pub fn secret_key(&self) -> &DilithiumSecretKey {
+        &self.secret_key
+    }
+
     /// Sign arbitrary bytes. Returns a detached signature.
     pub fn sign(&self, message: &[u8]) -> ByzResult<DilithiumSignature> {
         let sk = dilithium3::SecretKey::from_bytes(&self.secret_key.0)
@@ -108,6 +135,24 @@ pub fn verify(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_keypair_survives_a_round_trip_through_storage() {
+        // The property that makes restarts safe: a reloaded key must produce
+        // signatures the original public key still verifies.
+        let original = DilithiumKeypair::generate();
+        let pk_hex = original.public_key.to_hex();
+        let sk_hex = original.secret_key().to_hex();
+
+        let reloaded = DilithiumKeypair::from_parts(
+            DilithiumPublicKey::from_hex(&pk_hex).unwrap(),
+            DilithiumSecretKey::from_hex(&sk_hex).unwrap(),
+        );
+
+        let msg = b"an attestation signed before the restart";
+        let sig = reloaded.sign(msg).unwrap();
+        assert!(verify(msg, &sig, &original.public_key).is_ok());
+    }
 
     #[test]
     fn sign_verify_roundtrip() {

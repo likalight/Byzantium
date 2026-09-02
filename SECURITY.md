@@ -9,8 +9,9 @@ and politely.
 
 **Do not open a public issue.**
 
-Email **security@byzantium.example** *(replace with your real address before
-publishing this repository)* with:
+Use [GitHub private vulnerability reporting](https://github.com/likalight/Byzantium/security/advisories/new),
+which is enabled on this repository and reaches the maintainers directly without
+disclosing anything publicly. Include:
 
 - what the issue is, and which component
 - how to reproduce it — a failing test is ideal
@@ -75,3 +76,27 @@ All signatures are ML-DSA (Dilithium3) via `pqcrypto-dilithium`. If you find a
 misuse of the primitive — nonce handling, key reuse, a signature over
 non-canonical bytes, a field outside the signed payload — treat it as critical
 and report it directly.
+
+### Known risk: the signature crate is unmaintained
+
+`pqcrypto-dilithium`, `pqcrypto-kyber` and `pqcrypto-traits` are flagged
+unmaintained by RustSec, and every signature this system produces depends on
+them. We would rather write that down than have you discover it with
+`cargo audit`.
+
+There is no known defect in them today — the advisories describe crates going
+quiet, not exploitable bugs — and the underlying algorithm is a NIST standard
+rather than anything bespoke. But an unmaintained dependency in the signing path
+is a real risk and it is on the register, not dismissed.
+
+The migration path is to a maintained ML-DSA implementation. It is a contained
+change in principle, because all signing and verification goes through
+`byz-crypto`, but it touches every signed structure in the system and so is
+sequenced deliberately rather than done in a hurry.
+
+### Dependency advisories we have accepted
+
+`.cargo/audit.toml` lists the advisories we have assessed as unreachable, each
+with the path that pulls the crate in, why the described attack does not apply,
+and the condition that would make us revisit. If you think one of those
+judgements is wrong, that is a legitimate and welcome report.

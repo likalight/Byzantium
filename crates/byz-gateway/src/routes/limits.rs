@@ -90,6 +90,7 @@ pub async fn register_principal(
         .write()
         .await
         .insert(req.agent_did.to_string(), standing.clone());
+    state.persist_standing(&req.agent_did, &standing).await;
 
     Ok(Json(json!({
         "agent_did": req.agent_did.as_str(),
@@ -135,24 +136,13 @@ pub async fn issue_limit(
 ) -> Result<Json<IssueLimitResponse>, ApiError> {
     let ccy = req.ccy.unwrap_or(Currency::Usd);
 
-    let standing = state
-        .standings
-        .read()
-        .await
-        .get(req.agent_did.as_str())
-        .cloned()
-        .ok_or_else(|| {
-            bad_request("agent has no registered principal — call /v1/principals first")
-        })?;
+    let standing = state.standing_for(&req.agent_did).await.ok_or_else(|| {
+        bad_request("agent has no registered principal — call /v1/principals first")
+    })?;
 
     let reputation = state.reputation.read().await.detail(&req.agent_did);
     let exposure = state.mandate_engine.read().await.exposure(&req.agent_did);
-    let previous = state
-        .last_limits
-        .read()
-        .await
-        .get(req.agent_did.as_str())
-        .cloned();
+    let previous = state.previous_limit_for(&req.agent_did).await;
 
     let scope = LimitScope::any()
         .with_chains(req.chains)
@@ -170,8 +160,13 @@ pub async fn issue_limit(
         scope,
     };
 
+    let issue_started = std::time::Instant::now();
     let decision = state.underwriter.underwrite(&input);
     let reasons = decision.explain();
+    state.metrics.record_limit_issued(
+        decision.is_issued(),
+        issue_started.elapsed().as_millis() as u64,
+    );
 
     match decision.outcome {
         UnderwritingOutcome::Refused { ref cause } => Ok(Json(IssueLimitResponse {
@@ -223,6 +218,7 @@ pub async fn issue_limit(
                     issued_at: attestation.nbf,
                 },
             );
+            state.persist_issued_limit(&attestation, &reasons).await;
 
             Ok(Json(IssueLimitResponse {
                 issued: true,
@@ -252,6 +248,10 @@ async fn input_principal_ref(state: &AppState, did: &AgentDid) -> String {
 pub struct VerifyLimitRequest {
     pub attestation: LimitAttestation,
     pub draw: DrawInput,
+    /// Supply this and a retry returns the original answer instead of
+    /// committing the exposure a second time.
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,12 +287,25 @@ pub async fn revoke_limits(
     }
     let effective_from = req.effective_from.unwrap_or_else(Utc::now);
 
-    let mut reg = state.revocations.write().await;
+    {
+        let mut reg = state.revocations.write().await;
+        if let Some(ref did) = req.agent_did {
+            reg.revoke_agent(did.to_string(), effective_from);
+        }
+        if let Some(ref prn) = req.principal_ref {
+            reg.revoke_principal(prn.clone(), effective_from);
+        }
+    }
+    // A revocation that does not survive a restart brings the credential back.
     if let Some(ref did) = req.agent_did {
-        reg.revoke_agent(did.to_string(), effective_from);
+        state
+            .persist_revocation(&did.to_string(), "agent", effective_from)
+            .await;
     }
     if let Some(ref prn) = req.principal_ref {
-        reg.revoke_principal(prn.clone(), effective_from);
+        state
+            .persist_revocation(prn, "principal", effective_from)
+            .await;
     }
 
     Ok(Json(json!({
@@ -304,7 +317,7 @@ pub async fn revoke_limits(
     })))
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyLimitResponse {
     pub permitted: bool,
     /// The draw converted into the attestation's unit of account, after the
@@ -326,6 +339,18 @@ pub async fn verify_limit(
     State(state): State<AppState>,
     Json(req): Json<VerifyLimitRequest>,
 ) -> Result<Json<VerifyLimitResponse>, ApiError> {
+    let started = std::time::Instant::now();
+
+    // A retry must not commit the exposure again.
+    if let Some(ref key) = req.idempotency_key {
+        if let Some(cached) = state.idempotency.read().await.get(key) {
+            state.metrics.record_idempotent_replay();
+            return Ok(Json(
+                serde_json::from_value(cached).map_err(|e| server_error(e.to_string()))?,
+            ));
+        }
+    }
+
     AttestationIssuer::verify(&req.attestation, state.issuer.public_key()).map_err(|e| {
         (
             StatusCode::UNAUTHORIZED,
@@ -336,6 +361,9 @@ pub async fn verify_limit(
     // A valid signature is not enough — the outstanding set may have been killed
     // since it was issued.
     if let Some(reason) = state.revocations.read().await.check(&req.attestation) {
+        state
+            .metrics
+            .record_authorisation(false, true, started.elapsed().as_millis() as u64);
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(json!({ "error": reason.describe(), "revoked": true })),
@@ -351,59 +379,65 @@ pub async fn verify_limit(
         .convert_with_haircut(&raw, req.attestation.ccy, req.draw.asset_class)
         .map_err(|e| bad_request(e.to_string()))?;
 
-    let exposure = state
-        .mandate_engine
-        .read()
-        .await
-        .exposure(&req.attestation.sub);
-    let window_used = exposure
-        .total_committed()
-        .unwrap_or(Money::zero(req.attestation.ccy));
-
-    let draw = DrawRequest {
-        amount: effective,
-        asset_class: req.draw.asset_class,
-        chain: req.draw.chain,
-        action_type: req.draw.action_type,
-        counterparty_class: req.draw.counterparty_class,
-        window_used,
-    };
-
     let fee = req
         .attestation
         .fee_for(&effective)
         .map(|m| m.minor_units)
         .unwrap_or(0);
 
-    match req.attestation.permits(&draw, chrono::Utc::now()) {
-        Ok(()) => {
-            // Reserve the capacity now. An unresolved commitment is capacity that
-            // is already spoken for; without this, concurrent draws each see an
-            // empty window.
-            state
-                .mandate_engine
-                .write()
-                .await
-                .record_commit(&req.attestation.sub, effective);
+    // Reading exposure, deciding, and reserving the capacity must be one
+    // indivisible step. Splitting them lets two concurrent draws each observe an
+    // empty window and both succeed, which is exactly the overspend the window
+    // exists to prevent. Holding the write guard across all three closes it.
+    let (permitted, window_used, refusal) = {
+        let mut engine = state.mandate_engine.write().await;
+        let exposure = engine.exposure(&req.attestation.sub);
+        let window_used = exposure
+            .total_committed()
+            .unwrap_or(Money::zero(req.attestation.ccy));
 
-            Ok(Json(VerifyLimitResponse {
-                permitted: true,
-                effective_minor: effective.minor_units,
-                effective_ccy: effective.currency.code().to_string(),
-                window_used_minor: window_used.minor_units,
-                fee_minor: fee,
-                refusal: None,
-            }))
+        let draw = DrawRequest {
+            amount: effective,
+            asset_class: req.draw.asset_class,
+            chain: req.draw.chain,
+            action_type: req.draw.action_type,
+            counterparty_class: req.draw.counterparty_class,
+            window_used,
+        };
+
+        match req.attestation.permits(&draw, chrono::Utc::now()) {
+            Ok(()) => {
+                engine.record_commit(&req.attestation.sub, effective);
+                (true, window_used, None)
+            }
+            Err(refusal) => (false, window_used, Some(refusal.describe())),
         }
-        Err(refusal) => Ok(Json(VerifyLimitResponse {
-            permitted: false,
-            effective_minor: effective.minor_units,
-            effective_ccy: effective.currency.code().to_string(),
-            window_used_minor: window_used.minor_units,
-            fee_minor: fee,
-            refusal: Some(refusal.describe()),
-        })),
+    };
+
+    if permitted {
+        state.persist_exposure(&req.attestation.sub).await;
     }
+
+    let response = VerifyLimitResponse {
+        permitted,
+        effective_minor: effective.minor_units,
+        effective_ccy: effective.currency.code().to_string(),
+        window_used_minor: window_used.minor_units,
+        fee_minor: fee,
+        refusal,
+    };
+
+    state
+        .metrics
+        .record_authorisation(permitted, false, started.elapsed().as_millis() as u64);
+
+    if let Some(ref key) = req.idempotency_key {
+        if let Ok(v) = serde_json::to_value(&response) {
+            state.idempotency.write().await.put(key.clone(), v);
+        }
+    }
+
+    Ok(Json(response))
 }
 
 // ──────────────────────────────── settlement ─────────────────────────────────
@@ -413,6 +447,9 @@ pub struct SettleRequest {
     pub agent_did: AgentDid,
     pub amount_minor: u64,
     pub currency: Currency,
+    /// Supply this and a retried settlement does not consume the window twice.
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
     /// False when the draw failed, which releases the exposure instead of
     /// consuming window capacity.
     pub settled: bool,
@@ -424,6 +461,13 @@ pub async fn settle_draw(
     State(state): State<AppState>,
     Json(req): Json<SettleRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    if let Some(ref key) = req.idempotency_key {
+        if let Some(cached) = state.idempotency.read().await.get(key) {
+            state.metrics.record_idempotent_replay();
+            return Ok(Json(cached));
+        }
+    }
+
     let amount = Money::new(req.amount_minor, req.currency);
 
     {
@@ -452,11 +496,24 @@ pub async fn settle_draw(
             .ingest(ScoringEvent::new(req.agent_did.clone(), outcome, false).with_amount(amount));
     }
 
+    state.persist_exposure(&req.agent_did).await;
+    state.metrics.record_settlement(req.settled);
+
     let exposure = state.mandate_engine.read().await.exposure(&req.agent_did);
-    Ok(Json(json!({
+    let response = json!({
         "agent_did": req.agent_did.as_str(),
         "settled": req.settled,
         "at_risk_minor": exposure.at_risk.minor_units,
         "window_used_minor": exposure.window_used.minor_units,
-    })))
+    });
+
+    if let Some(ref key) = req.idempotency_key {
+        state
+            .idempotency
+            .write()
+            .await
+            .put(key.clone(), response.clone());
+    }
+
+    Ok(Json(response))
 }

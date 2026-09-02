@@ -15,6 +15,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::circuit_breaker::CircuitBreaker;
+use crate::idempotency::IdempotencyCache;
+use crate::keystore::IssuerKeystore;
 use crate::metrics::Metrics;
 use crate::middleware::rate_limit::RateLimiter;
 use crate::tee_client::TeeClient;
@@ -49,6 +51,10 @@ pub struct AppState {
     pub underwriter: Arc<Underwriter>,
     /// Signs limit attestations.
     pub issuer: Arc<AttestationIssuer>,
+    /// The issuer signing key and the retired keys still accepted for
+    /// verification. Published at `/v1/issuer-keys` so relying parties can
+    /// check a credential without a prior key exchange.
+    pub keystore: Arc<RwLock<IssuerKeystore>>,
     /// KYC standing per agent DID. Underwriting is gated on this.
     pub standings: Arc<RwLock<HashMap<String, PrincipalStanding>>>,
     /// Last limit issued per agent, so growth can be rate-capped.
@@ -69,13 +75,41 @@ pub struct AppState {
     /// normal way to withdraw a limit is to stop reissuing it; this covers the
     /// compromised-agent case where waiting for expiry is too slow.
     pub revocations: Arc<RwLock<RevocationRegistry>>,
+    /// Replayed authorisations and settlements return their original response.
+    /// Without this a client retry commits the same exposure twice.
+    pub idempotency: Arc<RwLock<IdempotencyCache>>,
 }
 
 impl AppState {
     pub fn new(config: Config) -> Self {
         let threshold = config.reputation.default_threshold;
         let rate_limit = config.gateway.rate_limit_per_min;
-        let gateway_keypair = DilithiumKeypair::generate();
+        // Load the signing key rather than generating one. A key that does not
+        // survive a restart takes every credential it ever signed with it.
+        let keystore = match config.gateway.signing_key_path {
+            Some(ref path) => match IssuerKeystore::load_or_create(path) {
+                Ok(ks) => {
+                    tracing::info!(kid = %ks.active_kid(), path = %path, "issuer signing key loaded");
+                    ks
+                }
+                Err(e) => {
+                    // Refusing to start is the right behaviour here, but AppState
+                    // has no way to report it, so make the failure impossible to
+                    // miss and fall back to ephemeral.
+                    tracing::error!(error = %e, "could not load the issuer signing key");
+                    panic!("issuer signing key at {path} could not be loaded: {e}");
+                }
+            },
+            None => {
+                tracing::warn!(
+                    "BYZ_SIGNING_KEY_PATH is not set — generating an ephemeral issuer key. \
+                     Every credential signed by this process becomes unverifiable when it \
+                     restarts. Do not run this way outside local development."
+                );
+                IssuerKeystore::ephemeral()
+            }
+        };
+        let gateway_keypair = keystore.active().clone();
         // The issuer signs with the gateway key, so a relying party that already
         // trusts this gateway's PassTokens can verify attestations with the same
         // key rather than establishing a second trust root.
@@ -99,6 +133,7 @@ impl AppState {
             usage_meter: Arc::new(UsageMeter::new(StripeClient::from_env())),
             underwriter: Arc::new(Underwriter::new(UnderwritingConfig::default())),
             issuer: Arc::new(issuer),
+            keystore: Arc::new(RwLock::new(keystore)),
             standings: Arc::new(RwLock::new(HashMap::new())),
             last_limits: Arc::new(RwLock::new(HashMap::new())),
             fx: Arc::new(FxTable::default()),
@@ -107,6 +142,7 @@ impl AppState {
             provenance_rejected: Arc::new(RwLock::new(HashMap::new())),
             evidence_refs: Arc::new(RwLock::new(HashMap::new())),
             revocations: Arc::new(RwLock::new(RevocationRegistry::new())),
+            idempotency: Arc::new(RwLock::new(IdempotencyCache::new())),
         }
     }
 

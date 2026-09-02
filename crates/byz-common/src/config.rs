@@ -34,6 +34,13 @@ pub struct GatewayConfig {
     pub cors_origins: Vec<String>,
     /// If set, /metrics requires this token as Bearer auth. Leave unset for open access (behind firewall).
     pub metrics_token: Option<String>,
+    /// Where the issuer signing key is stored, from `BYZ_SIGNING_KEY_PATH`.
+    ///
+    /// When unset the gateway generates an ephemeral key at startup, which is
+    /// fine for local development and catastrophic anywhere else: every
+    /// credential ever issued becomes unverifiable the moment the process
+    /// restarts. The gateway logs a warning when it happens.
+    pub signing_key_path: Option<String>,
 }
 
 impl Default for GatewayConfig {
@@ -67,6 +74,9 @@ impl Default for GatewayConfig {
                 .map(|s| s.trim().to_string())
                 .collect(),
             metrics_token: std::env::var("BYZ_METRICS_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            signing_key_path: std::env::var("BYZ_SIGNING_KEY_PATH")
                 .ok()
                 .filter(|s| !s.is_empty()),
         }

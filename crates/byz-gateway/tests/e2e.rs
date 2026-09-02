@@ -36,6 +36,8 @@ fn test_config(api_key: &str) -> Config {
             proof_refresh_secs: 60,
             cors_origins: vec!["http://localhost:3000".to_string()],
             metrics_token: None,
+            // Ephemeral key: these tests do not span a restart.
+            signing_key_path: None,
         },
         database: DatabaseConfig {
             url: "postgres://unused:unused@localhost/unused".to_string(),

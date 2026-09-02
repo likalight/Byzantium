@@ -31,9 +31,11 @@ whenever someone is representing the project in public.
 
 ## Enforcement
 
-Report unacceptable behaviour to **conduct@byzantium.example** *(replace with a
-real address before publishing)*. Reports are handled confidentially, and the
-person handling a report will recuse themselves if they are involved.
+Report unacceptable behaviour by opening a
+[private security advisory](https://github.com/likalight/Byzantium/security/advisories/new)
+— it is the private channel this repository has, and it reaches the maintainers
+without anything being disclosed publicly. Reports are handled confidentially,
+and anyone involved in a report will recuse themselves from handling it.
 
 Maintainers may edit, remove, or reject contributions that do not meet this
 standard, and may temporarily or permanently ban anyone for behaviour they judge

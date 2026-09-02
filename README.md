@@ -5,7 +5,7 @@
 <br>
 
 [![CI](https://github.com/likalight/Byzantium/actions/workflows/ci.yml/badge.svg)](https://github.com/likalight/Byzantium/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-219%20passing-5FBE95)](#testing)
+[![Tests](https://img.shields.io/badge/tests-241%20passing-5FBE95)](#testing)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-4FA3F5)](LICENSE)
 [![Crypto: ML-DSA](https://img.shields.io/badge/signatures-ML--DSA%20(Dilithium3)-8B5CF6)](https://csrc.nist.gov/pubs/fips/204/final)
@@ -181,7 +181,7 @@ byzantium/
 ## Testing
 
 ```bash
-cargo test --workspace          # 219 tests
+cargo test --workspace          # 241 tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```

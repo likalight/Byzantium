@@ -2,6 +2,7 @@
 name = "byz-rail-a2a"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "Byzantium A2A (Agent-to-Agent) protocol trust adapter"
 
 [dependencies]

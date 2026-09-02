@@ -7,7 +7,7 @@
 [![CI](https://github.com/likalight/Byzantium/actions/workflows/ci.yml/badge.svg)](https://github.com/likalight/Byzantium/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-241%20passing-5FBE95)](#testing)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-4FA3F5)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-4FA3F5)](LICENSE)
 [![Crypto: ML-DSA](https://img.shields.io/badge/signatures-ML--DSA%20(Dilithium3)-8B5CF6)](https://csrc.nist.gov/pubs/fips/204/final)
 [![RFC 9421](https://img.shields.io/badge/RFC%209421-HTTP%20Message%20Signatures-0EA5E9)](https://www.rfc-editor.org/rfc/rfc9421.html)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-E0A64A)](CONTRIBUTING.md)
@@ -197,4 +197,4 @@ The suite is weighted toward adversarial cases rather than happy paths — bust-
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

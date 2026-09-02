@@ -2,6 +2,7 @@
 name = "byz-tee"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 
 # Two TEE service binaries — each runs inside its own Gramine SGX enclave.
 [[bin]]

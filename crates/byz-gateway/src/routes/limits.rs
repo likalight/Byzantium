@@ -385,10 +385,102 @@ pub async fn verify_limit(
         .map(|m| m.minor_units)
         .unwrap_or(0);
 
-    // Reading exposure, deciding, and reserving the capacity must be one
-    // indivisible step. Splitting them lets two concurrent draws each observe an
-    // empty window and both succeed, which is exactly the overspend the window
-    // exists to prevent. Holding the write guard across all three closes it.
+    // Reading exposure, deciding, and reserving capacity must be one indivisible
+    // step. Splitting them lets two concurrent draws each observe an empty
+    // window and both succeed — the exact overspend the window exists to
+    // prevent.
+    //
+    // With a store attached this happens inside Redis, so the guarantee holds
+    // across every replica rather than only within this process. Without one it
+    // falls back to holding the local write guard, which is correct for a single
+    // gateway and is why the deployment must not scale past one without Redis.
+    if let Some(ref store) = state.store {
+        let outcome = store
+            .exposure
+            .try_commit(
+                &req.attestation.sub,
+                effective.minor_units,
+                req.attestation.lim_single.minor_units,
+                req.attestation.lim_window.minor_units,
+                req.attestation.window_secs,
+            )
+            .await
+            // A Redis failure must refuse the draw. Falling back to local state
+            // during a partition is how an outage becomes an overspend.
+            .map_err(|e| {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({
+                        "error": format!("exposure unavailable, refusing: {e}"),
+                        "permitted": false
+                    })),
+                )
+            })?;
+
+        let permitted = outcome.is_reserved();
+        let window_used_minor = match &outcome {
+            byz_store::CommitOutcome::Reserved { window_used_after } => *window_used_after,
+            byz_store::CommitOutcome::ExceedsWindow { would_reach, .. } => *would_reach,
+            byz_store::CommitOutcome::ExceedsSingle { .. } => 0,
+        };
+
+        // Scope still has to be checked locally — Redis knows about amounts, not
+        // about which chains this credential was issued for.
+        let scope_refusal = req
+            .attestation
+            .permits(
+                &DrawRequest {
+                    amount: Money::zero(req.attestation.ccy),
+                    asset_class: req.draw.asset_class,
+                    chain: req.draw.chain.clone(),
+                    action_type: req.draw.action_type.clone(),
+                    counterparty_class: req.draw.counterparty_class.clone(),
+                    window_used: Money::zero(req.attestation.ccy),
+                },
+                chrono::Utc::now(),
+            )
+            .err()
+            .map(|r| r.describe());
+
+        let refusal = scope_refusal.or_else(|| {
+            if permitted {
+                None
+            } else {
+                Some(outcome.describe())
+            }
+        });
+
+        // A draw that passed the amount check but fails scope must give its
+        // reservation back.
+        if permitted && refusal.is_some() {
+            let _ = store
+                .exposure
+                .resolve(&req.attestation.sub, effective.minor_units, false)
+                .await;
+        }
+
+        let response = VerifyLimitResponse {
+            permitted: permitted && refusal.is_none(),
+            effective_minor: effective.minor_units,
+            effective_ccy: effective.currency.code().to_string(),
+            window_used_minor,
+            fee_minor: fee,
+            refusal,
+        };
+
+        state.metrics.record_authorisation(
+            response.permitted,
+            false,
+            started.elapsed().as_millis() as u64,
+        );
+        if let Some(ref key) = req.idempotency_key {
+            if let Ok(v) = serde_json::to_value(&response) {
+                state.idempotency.write().await.put(key.clone(), v);
+            }
+        }
+        return Ok(Json(response));
+    }
+
     let (permitted, window_used, refusal) = {
         let mut engine = state.mandate_engine.write().await;
         let exposure = engine.exposure(&req.attestation.sub);
@@ -469,6 +561,16 @@ pub async fn settle_draw(
     }
 
     let amount = Money::new(req.amount_minor, req.currency);
+
+    if let Some(ref store) = state.store {
+        if let Err(e) = store
+            .exposure
+            .resolve(&req.agent_did, amount.minor_units, req.settled)
+            .await
+        {
+            tracing::error!(error = %e, "could not resolve shared exposure");
+        }
+    }
 
     {
         let mut engine = state.mandate_engine.write().await;

@@ -32,9 +32,16 @@ services:
       - IMMUDB_PASSWORD=immudb
       - IMMUDB_DATABASE=defaultdb
       - RUST_LOG=byzantium=info,tower_http=debug
+      # The issuer signing key lives on a named volume so it survives
+      # `docker compose down`. Without it every restart invalidates every
+      # credential the gateway has issued.
+      - BYZ_SIGNING_KEY_PATH=/var/lib/byzantium/signing-key.json
+      - BYZ_DEMO_ENABLED=true
       # Optional: set OTEL_EXPORTER_OTLP_ENDPOINT to enable distributed tracing.
       # When the "observability" profile is active the jaeger service provides this endpoint.
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    volumes:
+      - signing-key:/var/lib/byzantium
     depends_on:
       migrate:
         condition: service_completed_successfully

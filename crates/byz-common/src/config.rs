@@ -34,6 +34,11 @@ pub struct GatewayConfig {
     pub cors_origins: Vec<String>,
     /// If set, /metrics requires this token as Bearer auth. Leave unset for open access (behind firewall).
     pub metrics_token: Option<String>,
+    /// Serve the walkthrough page at `/demo`. Off unless `BYZ_DEMO_ENABLED=true`.
+    ///
+    /// The page is unauthenticated by necessity — it is a browser page — so it
+    /// should not be reachable on a deployment that handles real traffic.
+    pub demo_enabled: bool,
     /// Where the issuer signing key is stored, from `BYZ_SIGNING_KEY_PATH`.
     ///
     /// When unset the gateway generates an ephemeral key at startup, which is
@@ -76,6 +81,9 @@ impl Default for GatewayConfig {
             metrics_token: std::env::var("BYZ_METRICS_TOKEN")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            demo_enabled: std::env::var("BYZ_DEMO_ENABLED")
+                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+                .unwrap_or(false),
             signing_key_path: std::env::var("BYZ_SIGNING_KEY_PATH")
                 .ok()
                 .filter(|s| !s.is_empty()),

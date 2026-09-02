@@ -31,6 +31,7 @@ fn test_config(api_key: &str) -> Config {
             metrics_token: None,
             // Ephemeral key: these tests do not span a restart.
             signing_key_path: None,
+            demo_enabled: false,
         },
         database: DatabaseConfig {
             url: "postgres://unused:unused@localhost/unused".to_string(),

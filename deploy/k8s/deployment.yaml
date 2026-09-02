@@ -13,6 +13,11 @@ metadata:
     app.kubernetes.io/component: gateway
     app.kubernetes.io/part-of: byzantium
 spec:
+  # Every replica shares exposure through Redis (see byz-store::SharedExposure),
+  # so the rolling window is enforced across all of them rather than once per
+  # pod. If Redis is ever removed or unreachable the gateway refuses draws
+  # rather than falling back to local state — an outage must not become an
+  # overspend. Do not run more than one replica without Redis.
   replicas: 3
   selector:
     matchLabels:
@@ -238,6 +243,24 @@ spec:
                   name: byzantium-secrets
                   key: REPUTATION_TEE_PORT
                   optional: true
+            # Issuer signing key.
+            #
+            # Mounted from a Secret rather than generated per pod. Three
+            # replicas each inventing their own key would each issue credentials
+            # the other two could not verify, and the root filesystem is
+            # read-only, so a generated key could not persist anyway.
+            #
+            # Provision with:
+            #   cargo run -p byz-gateway --bin byz-keygen -- --out signing-key.json
+            #   kubectl create secret generic byzantium-signing-key \
+            #     --from-file=signing-key.json=./signing-key.json
+            - name: BYZ_SIGNING_KEY_PATH
+              value: /etc/byzantium/signing-key.json
+
+            # The walkthrough page is unauthenticated by nature. Off in cluster.
+            - name: BYZ_DEMO_ENABLED
+              value: "false"
+
             # Logging
             - name: RUST_LOG
               valueFrom:
@@ -260,10 +283,20 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # Read-only: the gateway loads this key and must never rewrite it.
+            # Rotation is an operator action that replaces the Secret, not
+            # something a pod does to itself.
+            - name: signing-key
+              mountPath: /etc/byzantium
+              readOnly: true
 
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: signing-key
+          secret:
+            secretName: byzantium-signing-key
+            defaultMode: 0400
 
       # Pull from GHCR (requires a k8s imagePullSecret if the registry is private)
       # imagePullSecrets:

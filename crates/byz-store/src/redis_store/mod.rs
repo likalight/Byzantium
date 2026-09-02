@@ -3,6 +3,9 @@
 //! The hot path (< 200ms) reads from this cache and verifies proof bytes.
 //! It never generates proofs. The off-path proof-refresh job writes here.
 
+pub mod exposure;
+pub use exposure::{CommitOutcome, SharedExposure, SharedSnapshot};
+
 use byz_common::{AgentDid, ByzResult, ByzantiumError};
 use byz_proof::{threshold::VerifiedThreshold, CachedProofBundle};
 use redis::aio::ConnectionManager;

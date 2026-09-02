@@ -7,7 +7,7 @@ pub use postgres::{
     AgentRepository, ApiKeyRepository, ApiKeyRow, BatchRepository, Db, IssuedLimitRow,
     MandateRepository, ReceiptRepository, ReceiptRow, UnderwritingRepository,
 };
-pub use redis_store::ProofCache;
+pub use redis_store::{CommitOutcome, ProofCache, SharedExposure, SharedSnapshot};
 
 use byz_common::config::Config;
 use sqlx::PgPool;
@@ -22,6 +22,9 @@ pub struct Store {
     pub batches: BatchRepository,
     pub api_keys: ApiKeyRepository,
     pub proof_cache: ProofCache,
+    /// Exposure shared across every gateway replica. The in-memory ledger is
+    /// correct for one process; this is what makes more than one safe.
+    pub exposure: SharedExposure,
     pub reputation_graph: ReputationGraph,
     /// Standing, issued limits, exposure, provenance and revocation cutoffs.
     pub underwriting: UnderwritingRepository,
@@ -51,7 +54,8 @@ impl Store {
             batches: BatchRepository::new(db.clone()),
             api_keys: ApiKeyRepository::new(db.clone()),
             underwriting: UnderwritingRepository::new(db.clone()),
-            proof_cache: ProofCache::new(redis_mgr, config.redis.proof_cache_ttl_secs),
+            proof_cache: ProofCache::new(redis_mgr.clone(), config.redis.proof_cache_ttl_secs),
+            exposure: SharedExposure::new(redis_mgr),
             reputation_graph: ReputationGraph::new(neo4j),
             pool: db,
         })

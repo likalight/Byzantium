@@ -5,7 +5,7 @@
 <br>
 
 [![CI](https://github.com/likalight/Byzantium/actions/workflows/ci.yml/badge.svg)](https://github.com/likalight/Byzantium/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-241%20passing-5FBE95)](#testing)
+[![Tests](https://img.shields.io/badge/tests-249%20passing-5FBE95)](#testing)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-CE422B?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-4FA3F5)](LICENSE)
 [![Signatures: ML-DSA](https://img.shields.io/badge/signatures-ML--DSA%20(Dilithium3)-8B5CF6)](https://csrc.nist.gov/pubs/fips/204/final)
@@ -333,7 +333,7 @@ byzantium/
 ## Testing
 
 ```bash
-cargo test --workspace                                    # 241 tests
+cargo test --workspace                                    # 249 tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 cargo audit                                               # see .cargo/audit.toml
@@ -375,7 +375,8 @@ Working and tested, with known gaps stated plainly. Not yet running production t
 | Underwriting, attestations, TAP, provenance, passport, revocation | Built and tested |
 | Issuer key persistence, rotation, published verification keys | Built and tested |
 | Durable state, idempotency, authorisation metrics | Built and tested |
-| Shared exposure across replicas | **In-memory only** — run one gateway |
+| Shared exposure across replicas | Built — atomic check-and-reserve in Redis; refuses draws if Redis is unreachable |
+| Deployment: key provisioning, demo gating | Built — `byz-keygen`, Secret mount, `/demo` off by default |
 | Sanctions screening | A boolean field with no provider behind it |
 | Neo4j counterparty graph | Wired but unused; scoring is in-process |
 | `<200ms` latency claim | Not independently load-tested |

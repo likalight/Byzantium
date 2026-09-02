@@ -76,13 +76,20 @@ pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .route("/health", get(health))
         .route("/metrics", get(metrics))
-        // Served from the gateway itself so it is same-origin: a page opened from
-        // the filesystem could not call these endpoints without CORS.
-        .route("/demo", get(demo_page))
         // Relying parties need the issuer's public keys to verify an
         // attestation, and needing a prior key exchange to do so would defeat
         // the point of a portable credential.
         .route("/v1/issuer-keys", get(issuer_keys));
+
+    // The walkthrough is served from the gateway so it is same-origin — a page
+    // opened from the filesystem could not reach these endpoints without
+    // relaxing CORS. It is unauthenticated by nature, so it stays off unless
+    // asked for.
+    let public = if state.config.gateway.demo_enabled {
+        public.route("/demo", get(demo_page))
+    } else {
+        public
+    };
 
     Router::new()
         .merge(protected)
